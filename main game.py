@@ -16,9 +16,23 @@ screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
 pygame.display.set_caption("Project: Genshin Spire")
 
 # 字體加載
-font_main = pygame.font.SysFont(["Microsoft YaHei", "SimHei", "Arial"], 20)
-font_hp = pygame.font.SysFont("Arial", 22, bold=True)
-font_big = pygame.font.SysFont(["SimHei", "Arial"], 60)
+UI_FONT_FAMILIES = [
+    "Microsoft YaHei", "Microsoft YaHei UI", "SimHei", "SimSun",
+    "PingFang SC", "Noto Sans CJK SC", "Arial Unicode MS", "Arial",
+]
+_ui_font_cache = {}
+
+
+def get_ui_font(size, bold=False):
+    key = (size, bold)
+    if key not in _ui_font_cache:
+        _ui_font_cache[key] = pygame.font.SysFont(UI_FONT_FAMILIES, size, bold=bold)
+    return _ui_font_cache[key]
+
+
+font_main = get_ui_font(20)
+font_hp = get_ui_font(22, bold=True)
+font_big = get_ui_font(60)
 
 # 顏色定義
 WHITE = (255, 255, 255)
@@ -67,7 +81,7 @@ class FloatText(Animation):
     def draw(self, surface):
         if not self.active or self.alpha <= 0:
             return
-        font = pygame.font.SysFont("Arial", self.size, bold=True)
+        font = get_ui_font(self.size, bold=True)
         text_surf = font.render(self.text, True, self.color)
         text_surf.set_alpha(self.alpha)
         rect = text_surf.get_rect(center=(int(self.x), int(self.y)))

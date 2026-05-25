@@ -245,11 +245,25 @@ def load_element_icons():
 
 element_icons = load_element_icons()
 
-# 字體加載
-font_main = pygame.font.SysFont(["Microsoft YaHei", "SimHei", "Arial"], 20)
-font_desc = pygame.font.SysFont(["Microsoft YaHei", "SimHei", "Arial"], 14) 
-font_hp = pygame.font.SysFont(["SimHei", "Arial"], 22, bold=True)
-font_big = pygame.font.SysFont(["SimHei", "Arial"], 60)
+# 字體加載（統一使用支援中文的系統字體，避免彈出文字顯示為空白）
+UI_FONT_FAMILIES = [
+    "Microsoft YaHei", "Microsoft YaHei UI", "SimHei", "SimSun",
+    "PingFang SC", "Noto Sans CJK SC", "Arial Unicode MS", "Arial",
+]
+_ui_font_cache = {}
+
+
+def get_ui_font(size, bold=False):
+    key = (size, bold)
+    if key not in _ui_font_cache:
+        _ui_font_cache[key] = pygame.font.SysFont(UI_FONT_FAMILIES, size, bold=bold)
+    return _ui_font_cache[key]
+
+
+font_main = get_ui_font(20)
+font_desc = get_ui_font(14)
+font_hp = get_ui_font(22, bold=True)
+font_big = get_ui_font(60)
 
 # 顏色定義
 WHITE = (255, 255, 255)
@@ -292,7 +306,7 @@ class Animation:
 
 
 class FloatText(Animation):
-    def __init__(self, x, y, text, color, size=28):
+    def __init__(self, x, y, text, color, size=28, duration=2.4):
         super().__init__()
         self.x = x
         self.y = y
@@ -302,19 +316,25 @@ class FloatText(Animation):
         self.alpha = 255
         self.active = True
         self.timer = 0
-        self.duration = 1.0
-        self.velocity = -80
+        self.duration = duration
+        self.velocity = -42
 
     def update(self, dt):
         if not self.active: return
         self.timer += dt
         self.y += self.velocity * dt
-        self.alpha = max(0, 255 - int((self.timer / self.duration) * 255))
-        if self.timer >= self.duration: self.active = False
+        fade_start = self.duration * 0.55
+        if self.timer < fade_start:
+            self.alpha = 255
+        else:
+            fade_t = (self.timer - fade_start) / max(0.01, self.duration - fade_start)
+            self.alpha = max(0, 255 - int(fade_t * 255))
+        if self.timer >= self.duration:
+            self.active = False
 
     def draw(self, surface):
         if not self.active or self.alpha <= 0: return
-        font = pygame.font.SysFont("Arial", self.size, bold=True)
+        font = get_ui_font(self.size, bold=True)
         text_surf = font.render(self.text, True, self.color)
         text_surf.set_alpha(self.alpha)
         rect = text_surf.get_rect(center=(int(self.x), int(self.y)))
@@ -398,12 +418,32 @@ class ShakeScreen(Animation):
 
 
 class AnimationManager:
+    FLOAT_LANE_LEFT = 250
+    FLOAT_LANE_RIGHT = SCREEN_W - 400
+    FLOAT_STACK_STEP = 34
+
     def __init__(self):
         self.animations = []
         self.screen_shake = None
 
     def add(self, anim):
         self.animations.append(anim)
+
+    def _float_lane_x(self, x):
+        return self.FLOAT_LANE_LEFT if x < SCREEN_W * 0.5 else self.FLOAT_LANE_RIGHT
+
+    def _count_active_floats_in_lane(self, lane_x):
+        return sum(
+            1 for a in self.animations
+            if isinstance(a, FloatText) and a.active and abs(a.x - lane_x) < 100
+        )
+
+    def add_float_text(self, x, y, text, color, size=26, duration=2.4):
+        lane_x = self._float_lane_x(x)
+        slot = self._count_active_floats_in_lane(lane_x)
+        base_y = SCREEN_H * (0.34 if lane_x == self.FLOAT_LANE_LEFT else 0.30)
+        stacked_y = base_y - slot * self.FLOAT_STACK_STEP
+        self.add(FloatText(lane_x, stacked_y, text, color, size=size, duration=duration))
 
     def update(self, dt):
         for anim in self.animations[:]:
@@ -652,6 +692,20 @@ CARD_DATABASE = {
     "DISCOVERY": Card("灵光一闪", 1, description="從牌組或棄牌堆三選一加入手牌。消耗", type="SKILL", exhaust=True, element="None"),
 }
 
+# 卡牌中文名 -> CARD_DATABASE 鍵（用於能力牌到期歸還牌庫等）
+CARD_NAME_TO_KEY = {
+    "天街巡游": "REWARD_1", "星尘结界": "REWARD_2", "元素爆发": "REWARD_3",
+    "荒星防护": "REWARD_4", "大剑重击": "BURST_FLAME", "旋风护盾": "STORM_SHIELD",
+    "雨神之护": "RAIN_GUARD", "潮汐波": "TIDAL_WAVE",
+    "不灭之火": "SACRIFICE", "碎冰重击": "SHATTER", "黎明·斩击": "DAWN",
+    "净善摄位": "MAYA", "冰霜新星": "FROST_NOVA",
+    "天基烈焰": "HEAVEN_FLAME", "雷霆连击": "THUNDER_COMBO", "死神收割": "REAPER",
+    "神圣屏障": "DIVINE_BARRIER", "時空停滯": "TIME_STASIS", "命運豪賭": "FATE_GAMBLE",
+    "虛空血脈": "VOID_BLOOD", "無限迴路": "INFINITE_LOOP",
+    "造物主工坊": "CREATOR_WORKSHOP", "因果逆轉": "KARMA_REVERSE",
+    "灵光一闪": "DISCOVERY",
+}
+
 RELIC_DATABASE = {
     "BlizzardStrayer": {"id": "BlizzardStrayer", "name": "冰風迷途的留戀", "color": (100, 200, 255), "desc": "回合開始能量 +1"},
     "CrimsonWitch": {"id": "CrimsonWitch", "name": "熾烈的炎之魔女", "color": (255, 100, 50), "desc": "火元素傷害 +3，且蒸發不消耗潮濕"},
@@ -695,6 +749,9 @@ class BattleManager:
         self.deck = []
         self.hand = []
         self.discard = []
+        self.exhaust_pile = []          # 本場戰鬥中已消耗的牌（波次間會併回牌庫）
+        self.sidelined_power_cards = [] # 本輪已激活的能力牌實例（暫時不可抽）
+        self.owned_cards = []           # 已獲得的所有牌實例（升級介面用）
         self.reward_cards = []
         self.selected_reward = None
         self.show_deck = False
@@ -845,6 +902,9 @@ class BattleManager:
         self.deck = []
         self.hand = []
         self.discard = []
+        self.exhaust_pile = []
+        self.sidelined_power_cards = []
+        self.owned_cards = []
         self.reward_cards = []
         self.selected_reward = None
         self.show_deck = False
@@ -925,6 +985,7 @@ class BattleManager:
         self.deck.append(copy.deepcopy(CARD_DATABASE["PIERCE"]))
         self.deck.append(copy.deepcopy(CARD_DATABASE["IRON_WALL"]))
 
+        self.owned_cards = list(self.deck)
         if mode_name == "ENDLESS":
             self.start_endless_mode()
             return
@@ -966,6 +1027,79 @@ class BattleManager:
         self.state = "BATTLE"
         self.draw_cards(5)
         self.refresh_target_mark()
+
+    def _register_owned_card(self, card):
+        self.owned_cards.append(card)
+
+    def _active_power_name(self, card):
+        return card.base_name + ("+" if card.upgraded else "")
+
+    def _consolidate_combat_piles(self):
+        """將手牌、棄牌、消耗堆併回牌庫，避免波次間卡牌遺失。"""
+        self.deck.extend(c for c in self.hand if not getattr(c, "is_temporary", False))
+        self.deck.extend(c for c in self.discard if not getattr(c, "is_temporary", False))
+        self.deck.extend(c for c in self.exhaust_pile if not getattr(c, "is_temporary", False))
+        self.hand.clear()
+        self.discard.clear()
+        self.exhaust_pile.clear()
+
+    def _dispose_played_card(self, card):
+        if not card.exhaust:
+            self.discard.append(card)
+        else:
+            self.exhaust_pile.append(card)
+
+    def _card_from_template(self, base_name, upgraded=False):
+        key = CARD_NAME_TO_KEY.get(base_name)
+        if not key:
+            return None
+        template = CARD_DATABASE.get(key)
+        if not template:
+            return None
+        new_card = copy.deepcopy(template)
+        if upgraded:
+            new_card.upgrade()
+        return new_card
+
+    def _sync_power_entry_for_card(self, card):
+        """升級能力牌後，同步 powers / powers_with_group 中的名稱。"""
+        if card.type != "POWER":
+            return
+        new_name = self._active_power_name(card)
+        base = card.base_name
+        for old_name in (base, base + "+"):
+            if old_name in self.powers:
+                self.powers[self.powers.index(old_name)] = new_name
+                break
+        for old_name in list(self.powers_with_group.keys()):
+            if old_name in (base, base + "+"):
+                self.powers_with_group[new_name] = self.powers_with_group.pop(old_name)
+                break
+
+    def _power_base_name(self, power_name):
+        return power_name[:-1] if power_name.endswith("+") else power_name
+
+    def _has_active_power(self, base_name):
+        return base_name in self.powers or (base_name + "+") in self.powers
+
+    def _strip_temporary_cards(self):
+        """移除造物主工坊等產生的臨時牌，避免殘留或洗入牌庫。"""
+        for pile in (self.hand, self.deck, self.discard, self.exhaust_pile):
+            pile[:] = [c for c in pile if not getattr(c, "is_temporary", False)]
+
+    def _clear_power_effect(self, base_power_name):
+        """能力牌本輪結束：清除 buff 並移除 powers 登記（含升級前後名稱）。"""
+        for name in (base_power_name, base_power_name + "+"):
+            while name in self.powers:
+                self.powers.remove(name)
+            self.powers_with_group.pop(name, None)
+
+        if base_power_name == "造物主工坊":
+            self._strip_temporary_cards()
+        elif base_power_name == "净善摄位":
+            self.maya_active = False
+            self.grass_buff = False
+            self.maya_turns = 0
 
     def configure_stance_buff(self, wave):
         """節奏大師：僅 BOSS / 部分精英具備進攻·防禦交替"""
@@ -1039,7 +1173,7 @@ class BattleManager:
         if amount <= 0 or self.enemy_hp <= 0:
             return
         self.enemy_hp = max(0, self.enemy_hp - amount)
-        self.anim_queue.append(("dot_damage", amount, SCREEN_W - 400, SCREEN_H * 0.4))
+        self.anim_queue.append(("true_damage", amount, SCREEN_W - 400, SCREEN_H * 0.4))
         if self.enemy_hp <= 0:
             self.enemy_hp = 0
             self.anim_queue.append(("enemy_death",))
@@ -1049,7 +1183,6 @@ class BattleManager:
         if not getattr(card, "is_marked", False):
             return
         card.is_marked = False
-        self.anim_queue.append(("status_enemy", "標記追擊！15真傷", SCREEN_W - 400, SCREEN_H * 0.4))
         self.apply_true_damage(15)
 
     def get_control_resistance_multiplier(self):
@@ -1118,8 +1251,12 @@ class BattleManager:
         for _ in range(num):
             if len(self.hand) >= self.max_hand: break
             if not self.deck:
-                self.deck, self.discard = self.discard[:], []
-                random.shuffle(self.deck)
+                if self.discard or self.exhaust_pile:
+                    self.deck.extend(self.discard)
+                    self.deck.extend(self.exhaust_pile)
+                    self.discard.clear()
+                    self.exhaust_pile.clear()
+                    random.shuffle(self.deck)
             if self.deck:
                 card = self.deck.pop()
                 if card.base_name == "雷霆连击":
@@ -1143,6 +1280,7 @@ class BattleManager:
                 current_group = (self.current_wave - 1) // 5 + 1
                 self.powers_with_group[power_name] = current_group
                 self.hand.remove(card)
+                self.sidelined_power_cards.append(card)
                 self.energy -= card.cost
                 self.anim_queue.append(("status_enemy", f"激活: {card.name}", 250, SCREEN_H - 350))
                 
@@ -1204,7 +1342,7 @@ class BattleManager:
                 
                 self.apply_damage(final_damage, card, start_x, start_y)
                 self.hand.remove(card)
-                if not card.exhaust: self.discard.append(card)
+                self._dispose_played_card(card)
                 
             elif card_name == "不灭之火":
                 self.energy -= card.cost
@@ -1220,7 +1358,7 @@ class BattleManager:
 
                 self.apply_damage(final_damage, card, start_x, start_y)
                 self.hand.remove(card)
-                if not card.exhaust: self.discard.append(card)
+                self._dispose_played_card(card)
                 
             elif card_name == "雷霆连击":
                 self.energy -= card.cost
@@ -1237,7 +1375,7 @@ class BattleManager:
                         self.anim_queue.append(("status_enemy", "雷霆麻痹！", SCREEN_W - 400, SCREEN_H * 0.22))
                 self.hand.remove(card)
                 # === 修改这里：尊重卡牌的消耗属性 ===
-                if not card.exhaust: self.discard.append(card)
+                self._dispose_played_card(card)
                 
             elif card_name == "死神收割":
                 self.energy -= card.cost
@@ -1246,6 +1384,7 @@ class BattleManager:
                 self.player_hp = min(self.player_max_hp, self.player_hp + heal_amt)
                 self.anim_queue.append(("heal_player", heal_amt, 250, SCREEN_H - 350))
                 self.hand.remove(card)
+                self._dispose_played_card(card)
                 
             elif card_name == "神圣屏障": 
                 self.energy -= card.cost
@@ -1266,28 +1405,22 @@ class BattleManager:
                 
             elif card_name == "命運豪賭":
                 self.energy -= card.cost
-                if card in self.hand: self.hand.remove(card)
-                if not card.exhaust: self.discard.append(card)
-                
-                if card.upgraded:
-                    if len(self.hand) >= 4:
-                        self.selection_mode = "FATE_GAMBLE"
-                        self.state = "SELECT_CARD"
-                        self.selected_cards = []
-                        self.anim_queue.append(("status_enemy", "選擇 4 張手牌丟棄", 250, SCREEN_H - 350))
-                    else:
-                        # === 修改这里：过滤掉临时牌 ===
-                        self.discard.extend([c for c in self.hand if not getattr(c, 'is_temporary', False)])
-                        self.hand.clear()
-                        self.draw_cards(4)
+
+                if card.upgraded and len(self.hand) >= 4:
+                    self.selection_mode = "FATE_GAMBLE"
+                    self.state = "SELECT_CARD"
+                    self.selected_cards = []
+                    self.anim_queue.append(("status_enemy", "選擇 4 張手牌丟棄", 250, SCREEN_H - 350))
                 else:
-                    # === 修改这里：过滤掉临时牌 ===
-                    self.discard.extend([c for c in self.hand if not getattr(c, 'is_temporary', False)])
-                    self.hand.clear()
+                    self.discard.extend([
+                        c for c in self.hand
+                        if c is not card and not getattr(c, 'is_temporary', False)
+                    ])
+                    self.hand = [c for c in self.hand if c is card]
+                    self.finish_card_play(card, start_x, start_y)
                     self.draw_cards(4)
-                
-                tx, ty = 250, SCREEN_H - 300
-                self.anim_queue.append(("card_fly", card, start_x, start_y, tx, ty))
+                    return True
+
                 self.finish_card_play(card, start_x, start_y)
                 return True
 
@@ -1323,7 +1456,7 @@ class BattleManager:
                 # 控制抗性檢定
                 if self.can_apply_control():
                     multiplier = self.get_control_resistance_multiplier() * self.get_enemy_type_multiplier()
-                    freeze_turns = max(1, int(2 * multiplier))
+                    freeze_turns = max(1, int(1 * multiplier))
                     if freeze_turns > 0:
                         self.enemy_frozen = True
                         self.enemy_frozen_turns = freeze_turns
@@ -1336,7 +1469,7 @@ class BattleManager:
                     self.anim_queue.append(("status_enemy", "控制上限！", SCREEN_W - 400, SCREEN_H * 0.25))
                 self.apply_damage(final_damage, card, start_x, start_y)
                 self.hand.remove(card)
-                if not card.exhaust: self.discard.append(card)
+                self._dispose_played_card(card)
 
             elif card_name == "水刃":
                 self.energy -= card.cost
@@ -1347,13 +1480,14 @@ class BattleManager:
                 # =================================
                 self.anim_queue.append(("status_enemy", "潮濕!", SCREEN_W - 400, SCREEN_H * 0.25))
                 self.hand.remove(card)
-                if not card.exhaust: self.discard.append(card)
+                self._dispose_played_card(card)
 
             else:
                 self.energy -= card.cost
                 if card_name == "碎冰重击" and self.enemy_frozen_turns > 0:
                     final_damage *= 3
                     self.enemy_frozen_turns = 0
+                    self.enemy_frozen = False
                     self.reactions_this_turn += 1
                     self.anim_queue.append(("status_enemy", "碎冰！", SCREEN_W - 400, SCREEN_H * 0.25))
                 elif card_name == "天街巡游":
@@ -1367,7 +1501,7 @@ class BattleManager:
                 elif card_name == "元素爆发":
                     self.apply_damage(final_damage, card, start_x, start_y)
                     self.hand.remove(card)
-                    if not card.exhaust: self.discard.append(card)
+                    self._dispose_played_card(card)
                     # 控制抗性檢定
                     if self.can_apply_control():
                         multiplier = self.get_control_resistance_multiplier() * self.get_enemy_type_multiplier()
@@ -1394,7 +1528,7 @@ class BattleManager:
                 elif card_name == "大剑重击":
                     self.apply_damage(final_damage, card, start_x, start_y)
                     self.hand.remove(card)
-                    if not card.exhaust: self.discard.append(card)
+                    self._dispose_played_card(card)
                     # 控制抗性檢定
                     if self.can_apply_control():
                         multiplier = self.get_control_resistance_multiplier() * self.get_enemy_type_multiplier()
@@ -1428,7 +1562,7 @@ class BattleManager:
                 self.apply_damage(final_damage, card, start_x, start_y)
                 self.player_block += card.block
                 self.hand.remove(card)
-                if not card.exhaust: self.discard.append(card)
+                self._dispose_played_card(card)
 
             if self.enemy_hp <= 0:
                 self.enemy_hp = 0
@@ -1507,7 +1641,7 @@ class BattleManager:
         tx, ty = 250, SCREEN_H - 300
         self.anim_queue.append(("card_fly", card, sx, sy, tx, ty))
         if card in self.hand: self.hand.remove(card)
-        if not card.exhaust: self.discard.append(card)
+        self._dispose_played_card(card)
 
     def draw_random_skill(self):
         if len(self.hand) >= self.max_hand:
@@ -1516,10 +1650,12 @@ class BattleManager:
 
         skills = [c for c in self.deck if c.type == "SKILL"]
         
-        # 如果牌庫中沒有技能牌，則嘗試洗棄牌堆
-        if not skills and self.discard:
+        # 如果牌庫中沒有技能牌，則嘗試洗棄牌堆與消耗堆
+        if not skills and (self.discard or self.exhaust_pile):
             self.deck.extend(self.discard)
+            self.deck.extend(self.exhaust_pile)
             self.discard.clear()
+            self.exhaust_pile.clear()
             random.shuffle(self.deck)
             skills = [c for c in self.deck if c.type == "SKILL"]
 
@@ -1594,19 +1730,8 @@ class BattleManager:
     def choose_reward(self):
         if self.selected_reward:
             self.deck.append(self.selected_reward)
-            reward_keys = {
-                "天街巡游": "REWARD_1", "星尘结界": "REWARD_2", "元素爆发": "REWARD_3",
-                "荒星防护": "REWARD_4", "大剑重击": "BURST_FLAME", "旋风护盾": "STORM_SHIELD",
-                "雨神之护": "RAIN_GUARD", "潮汐波": "TIDAL_WAVE",
-                "不灭之火": "SACRIFICE", "碎冰重击": "SHATTER", "黎明·斩击": "DAWN",
-                "净善摄位": "MAYA", "冰霜新星": "FROST_NOVA",
-                "天基烈焰": "HEAVEN_FLAME", "雷霆连击": "THUNDER_COMBO", "死神收割": "REAPER",
-                "神圣屏障": "DIVINE_BARRIER", "時空停滯": "TIME_STASIS", "命運豪賭": "FATE_GAMBLE",
-                "虛空血脈": "VOID_BLOOD", "無限迴路": "INFINITE_LOOP",
-                "造物主工坊": "CREATOR_WORKSHOP", "因果逆轉": "KARMA_REVERSE",
-                "灵光一闪": "DISCOVERY"
-            }
-            card_key = reward_keys.get(self.selected_reward.base_name)
+            self._register_owned_card(self.selected_reward)
+            card_key = CARD_NAME_TO_KEY.get(self.selected_reward.base_name)
             if card_key and card_key not in self.obtained_rewards:
                 self.obtained_rewards.append(card_key)
 
@@ -1633,33 +1758,32 @@ class BattleManager:
         current_group = (w - 1) // 5 + 1
         expired_powers = []
         for power_name, power_group in list(self.powers_with_group.items()):
-            if power_group < current_group:
+            if power_group != current_group:
                 expired_powers.append(power_name)
-        
-        # 將過期的功能牌移除並重新加入牌池
+
+        cleared_bases = set()
         for power_name in expired_powers:
-            if power_name in self.powers:
-                self.powers.remove(power_name)
-            del self.powers_with_group[power_name]
-            # 重新加入牌池
-            # 处理升级后的卡牌（带"+"后缀）
-            is_upgraded = power_name.endswith("+")
-            base_power_name = power_name[:-1] if is_upgraded else power_name
-            
-            card_template = CARD_DATABASE.get(base_power_name)
-            if card_template:
-                # 检查牌库中是否已经有这张牌，避免重复
-                has_same_card = any(c.base_name == base_power_name for c in self.deck)
-                if not has_same_card:
-                    new_card = Card(card_template.name, card_template.cost, 
-                                   description=card_template.description, 
-                                   type=card_template.type, 
-                                   exhaust=getattr(card_template, 'exhaust', False),
-                                   element=card_template.element)
-                    # 如果是升级后的卡牌，应用升级效果
-                    if is_upgraded:
-                        new_card.upgrade()
-                    self.deck.append(new_card)
+            base_power_name = self._power_base_name(power_name)
+            if base_power_name in cleared_bases:
+                continue
+            cleared_bases.add(base_power_name)
+            self._clear_power_effect(base_power_name)
+
+            returned = False
+            for i, sidelined in enumerate(self.sidelined_power_cards):
+                if sidelined.base_name == base_power_name:
+                    self.deck.append(self.sidelined_power_cards.pop(i))
+                    returned = True
+                    break
+            if not returned:
+                is_upgraded = power_name.endswith("+") or any(
+                    c.base_name == base_power_name and c.upgraded for c in self.owned_cards
+                )
+                fallback = self._card_from_template(base_power_name, is_upgraded)
+                if fallback:
+                    self.deck.append(fallback)
+                    self._register_owned_card(fallback)
+
             self.anim_queue.append(("status_enemy", f"{power_name} 效果消失", 250, SCREEN_H - 350))
         
         # 重置機制屬性
@@ -1772,8 +1896,7 @@ class BattleManager:
         if "BlizzardStrayer" in [r["id"] for r in self.relics]:
             self.energy += 1
             
-        self.deck.extend(self.hand)
-        self.hand.clear()
+        self._consolidate_combat_piles()
         self.turn_count = 1
         
         self.enemy_dot_turns = 0
@@ -1824,7 +1947,7 @@ class BattleManager:
         """原來的敵人回合邏輯，從 start_player_turn 之前的邏輯拆分出來"""
         # --- 處理回合開始能力效果 ---
         # --- 處理回合開始能力效果 ---
-        if "造物主工坊" in self.powers or "造物主工坊+" in self.powers:
+        if self._has_active_power("造物主工坊"):
             temp_attack = copy.deepcopy(random.choice([c for c in CARD_DATABASE.values() if c.type == "ATTACK"]))
             # 檢查是否是升級版本
             if "造物主工坊+" in self.powers:
@@ -1862,6 +1985,8 @@ class BattleManager:
             status_msg = "敵人石化！"
         elif self.enemy_frozen_turns > 0:
             self.enemy_frozen_turns -= 1
+            if self.enemy_frozen_turns == 0:
+                self.enemy_frozen = False
             enemy_can_act = False
             status_msg = "敵人凍結！"
         
@@ -2400,8 +2525,8 @@ def draw_ui_surface(surface, game, mx, my):
             surface.blit(pet_ts, (w - 430, status_y))
             status_y += status_spacing
         
-        if game.enemy_frozen:
-            froz_ts = font_desc.render("[凍結]", True, (100, 200, 255))
+        if game.enemy_frozen_turns > 0:
+            froz_ts = font_desc.render(f"[凍結] {game.enemy_frozen_turns}回合", True, (100, 200, 255))
             surface.blit(froz_ts, (w - 430, status_y))
             status_y += status_spacing
             
@@ -2796,12 +2921,20 @@ def draw_deck_view_surface(surface, game, mx, my):
 
     # --- 1. 獲取並排序卡牌 ---
     type_order = {"ATTACK": 0, "SKILL": 1, "POWER": 2}
+    pool = (
+        game.owned_cards
+        + [c for c in game.sidelined_power_cards if c not in game.owned_cards]
+    )
     if game.deck_sort_mode == "TYPE":
-        all_cards = sorted(game.deck + game.hand + game.discard, 
-                           key=lambda c: (type_order.get(c.type, 3), c.cost, c.name))
+        all_cards = sorted(
+            pool,
+            key=lambda c: (type_order.get(c.type, 3), c.cost, c.name),
+        )
     else:
-        all_cards = sorted(game.deck + game.hand + game.discard, 
-                           key=lambda c: (c.cost, type_order.get(c.type, 3), c.name))
+        all_cards = sorted(
+            pool,
+            key=lambda c: (c.cost, type_order.get(c.type, 3), c.name),
+        )
 
     # --- 2. 網格佈局繪製 ---
     max_per_row = 5 # 參考圖為 5 列
@@ -2899,8 +3032,11 @@ def draw_upgrade_view_surface(surface, game, mx, my):
     overlay.fill((0, 0, 0, 230))
     surface.blit(overlay, (0, 0))
 
-    # 排序牌組：將相同的卡片排在一起 (按名稱排序)
-    all_cards = sorted(game.deck, key=lambda c: (c.name, c.upgraded))
+    # 顯示本局已獲得的所有卡牌（含暫時旁置的能力牌）
+    all_cards = sorted(
+        game.owned_cards,
+        key=lambda c: (c.name, c.upgraded),
+    )
     num_cards = len(all_cards)
     max_per_row = 6 
     card_spacing_x = 200 * ui_scale # 增加橫向間距
@@ -2940,9 +3076,12 @@ def draw_upgrade_view_surface(surface, game, mx, my):
                 surface.blit(s, (card_x - s_w // 2, card_y - s_h // 2))
                 up_ts = font_hp.render("MAX", True, GOLD)
                 surface.blit(up_ts, up_ts.get_rect(center=(card_x, card_y)))
+            elif card in game.sidelined_power_cards:
+                act_ts = font_desc.render("本輪生效", True, (120, 255, 160))
+                surface.blit(act_ts, act_ts.get_rect(center=(card_x, card_y + 90 * ui_scale)))
 
     # --- 頂層 UI 元素 (置於最後繪製) ---
-    title_ts = font_big.render("【精英/BOSS 獎勵】選擇一張卡牌進行升級", True, GOLD)
+    title_ts = font_big.render("【精英/BOSS 獎勵】從已獲得牌組中選一張升級", True, GOLD)
     surface.blit(title_ts, title_ts.get_rect(center=(w // 2, h * 0.06)))
 
     close_rect = pygame.Rect(w // 2 - 100 * ui_scale, int(h * 0.13), 200 * ui_scale, 40 * ui_scale)
@@ -3047,10 +3186,46 @@ class SoundManager:
                 sound.set_volume(volume)
 
 
+FLOAT_ANIM_TYPES = frozenset({
+    "damage_enemy", "block_player", "damage_player", "heal_player", "dot_damage",
+    "true_damage", "status_enemy",
+})
+MAX_ANIMS_PER_FRAME = 6
+MAX_FLOATS_PER_FRAME = 2
+
+
+def _collapse_status_messages(game):
+    """合併排隊中的連續狀態提示，避免一幀噴出過多紫字。"""
+    if not game.anim_queue or game.anim_queue[0][0] != "status_enemy":
+        return
+    msgs = []
+    while game.anim_queue and game.anim_queue[0][0] == "status_enemy":
+        msgs.append(game.anim_queue.pop(0))
+    if len(msgs) == 1:
+        game.anim_queue.insert(0, msgs[0])
+        return
+    _, _, x, y = msgs[-1]
+    if len(msgs) <= 2:
+        text = " · ".join(m[1] for m in msgs)
+    else:
+        text = f"{msgs[-2][1]} · {msgs[-1][1]}"
+    game.anim_queue.insert(0, ("status_enemy", text, x, y))
+
+
 def process_animation_queue(game, anim_mgr, sound_mgr):
-    while game.anim_queue:
+    _collapse_status_messages(game)
+    processed = 0
+    floats_added = 0
+    while game.anim_queue and processed < MAX_ANIMS_PER_FRAME:
+        if floats_added >= MAX_FLOATS_PER_FRAME:
+            atype = game.anim_queue[0][0]
+            if atype in FLOAT_ANIM_TYPES:
+                break
+
         anim_data = game.anim_queue.pop(0)
         atype = anim_data[0]
+        processed += 1
+
         if atype == "card_fly":
             _, card, sx, sy, tx, ty = anim_data
             anim_mgr.add(CardFly(card, (sx, sy), (tx, ty)))
@@ -3060,27 +3235,37 @@ def process_animation_queue(game, anim_mgr, sound_mgr):
             if game.flash_enabled:
                 anim_mgr.shake_screen(intensity=8, duration=0.2)
                 anim_mgr.add(FlashScreen((255, 255, 255), 0.15))
-            anim_mgr.add(FloatText(x, y, f"-{dmg}", RED, size=36))
+            anim_mgr.add_float_text(x, y, f"-{dmg}", RED, size=32, duration=1.8)
+            floats_added += 1
         elif atype == "block_player":
             _, blk, x, y = anim_data
             sound_mgr.play("shield")
-            anim_mgr.add(FloatText(x, y, f"+{blk} 護盾", BLUE, size=26))
+            anim_mgr.add_float_text(x, y, f"+{blk} 護盾", BLUE, size=24)
+            floats_added += 1
         elif atype == "damage_player":
             _, dmg, x, y = anim_data
             sound_mgr.play("hurt")
             if game.flash_enabled:
                 anim_mgr.shake_screen(intensity=15, duration=0.3)
                 anim_mgr.add(FlashScreen((220, 40, 40), 0.2))
-            anim_mgr.add(FloatText(x, y, f"-{dmg}", RED, size=36))
+            anim_mgr.add_float_text(x, y, f"-{dmg}", RED, size=32, duration=1.9)
+            floats_added += 1
         elif atype == "heal_player":
             _, amt, x, y = anim_data
-            anim_mgr.add(FloatText(x, y, f"+{amt} 生命", GREEN, size=26))
+            anim_mgr.add_float_text(x, y, f"+{amt} 生命", GREEN, size=24)
+            floats_added += 1
         elif atype == "dot_damage":
             _, dmg, x, y = anim_data
-            anim_mgr.add(FloatText(x, y, f"{dmg} 燃燒", (255, 100, 50), size=24))
+            anim_mgr.add_float_text(x, y, f"{dmg} 燃燒", (255, 100, 50), size=22)
+            floats_added += 1
+        elif atype == "true_damage":
+            _, dmg, x, y = anim_data
+            anim_mgr.add_float_text(x, y, f"-{dmg} 真傷", (255, 230, 120), size=26, duration=2.0)
+            floats_added += 1
         elif atype == "status_enemy":
             _, msg, x, y = anim_data
-            anim_mgr.add(FloatText(x, y, msg, (200, 150, 255), size=26))
+            anim_mgr.add_float_text(x, y, msg, (200, 150, 255), size=24, duration=2.6)
+            floats_added += 1
         elif atype == "enemy_death":
             sound_mgr.play("mage_death")
 
@@ -3496,6 +3681,7 @@ def main():
                         
                         if clicked_card and not clicked_card.upgraded:
                             clicked_card.upgrade()
+                            game._sync_power_entry_for_card(clicked_card)
                             game.pending_upgrade = False
                             game.current_wave += 1
                             if game.current_wave > game.max_waves:
