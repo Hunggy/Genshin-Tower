@@ -870,6 +870,7 @@ class BattleManager:
         self.animation_tick = 0
         
         # 敵人狀態
+        self.enemy_wet_turns = 0
         self.enemy_dot_turns = 0
         self.enemy_dot_damage = 0
         self.enemy_stun_turns = 0
@@ -1175,7 +1176,11 @@ class BattleManager:
                 dmg_per_hit = final_damage + self.pyro_damage_bonus
                 if self.enemy_wet:
                     dmg_per_hit *= 2
-                    if "CrimsonWitch" not in [r["id"] for r in self.relics]: self.enemy_wet = False
+                    if "CrimsonWitch" not in [r["id"] for r in self.relics]: 
+                        self.enemy_wet = False
+                        # === 新增這行：蒸發時同步清空回合數 ===
+                        self.enemy_wet_turns = 0
+                        # =================================
                 for i in range(times):
                     hit_dmg = dmg_per_hit
                     self.enemy_hp -= hit_dmg
@@ -1191,7 +1196,11 @@ class BattleManager:
                 if self.enemy_wet:
                     final_damage *= 2
                     self.reactions_this_turn += 1
-                    if "CrimsonWitch" not in [r["id"] for r in self.relics]: self.enemy_wet = False
+                    if "CrimsonWitch" not in [r["id"] for r in self.relics]: 
+                        self.enemy_wet = False
+                        # === 新增這行：蒸發時同步清空回合數 ===
+                        self.enemy_wet_turns = 0
+                        # =================================
                 
                 self.apply_damage(final_damage, card, start_x, start_y)
                 self.hand.remove(card)
@@ -1203,7 +1212,11 @@ class BattleManager:
                 if self.enemy_wet:
                     final_damage *= 2
                     self.reactions_this_turn += 1
-                    if "CrimsonWitch" not in [r["id"] for r in self.relics]: self.enemy_wet = False
+                    if "CrimsonWitch" not in [r["id"] for r in self.relics]: 
+                        self.enemy_wet = False
+                        # === 新增這行：蒸發時同步清空回合數 ===
+                        self.enemy_wet_turns = 0
+                        # =================================
 
                 self.apply_damage(final_damage, card, start_x, start_y)
                 self.hand.remove(card)
@@ -1223,7 +1236,8 @@ class BattleManager:
                         self.enemy_stun_turns = max(self.enemy_stun_turns, 1)
                         self.anim_queue.append(("status_enemy", "雷霆麻痹！", SCREEN_W - 400, SCREEN_H * 0.22))
                 self.hand.remove(card)
-                self.discard.append(card)
+                # === 修改这里：尊重卡牌的消耗属性 ===
+                if not card.exhaust: self.discard.append(card)
                 
             elif card_name == "死神收割":
                 self.energy -= card.cost
@@ -1262,11 +1276,13 @@ class BattleManager:
                         self.selected_cards = []
                         self.anim_queue.append(("status_enemy", "選擇 4 張手牌丟棄", 250, SCREEN_H - 350))
                     else:
-                        self.discard.extend(self.hand)
+                        # === 修改这里：过滤掉临时牌 ===
+                        self.discard.extend([c for c in self.hand if not getattr(c, 'is_temporary', False)])
                         self.hand.clear()
                         self.draw_cards(4)
                 else:
-                    self.discard.extend(self.hand)
+                    # === 修改这里：过滤掉临时牌 ===
+                    self.discard.extend([c for c in self.hand if not getattr(c, 'is_temporary', False)])
                     self.hand.clear()
                     self.draw_cards(4)
                 
@@ -1287,8 +1303,10 @@ class BattleManager:
                         if c in self.deck: self.deck.remove(c)
                         elif c in self.discard: self.discard.remove(c)
                         self.discovery_cards.append(c)
-                    # 记录是否是升级版本（三选二）
-                    self.discovery_select_count = 2 if card.upgraded else 1
+                    # === 修改這裡：如果牌不夠，動態下調需要選擇的數量 ===
+                    max_can_select = len(self.discovery_cards)
+                    self.discovery_select_count = min(2 if card.upgraded else 1, max_can_select)
+                    # ================================================
                     self.discovery_selected = []
                     self.state = "DISCOVERY"
                     self.anim_queue.append(("status_enemy", "靈光一閃！", 250, SCREEN_H - 350))
@@ -1324,6 +1342,9 @@ class BattleManager:
                 self.energy -= card.cost
                 self.apply_damage(final_damage, card, start_x, start_y)
                 self.enemy_wet = True
+                # === 新增這行：水刃賦予 2 回合潮濕 ===
+                self.enemy_wet_turns = max(getattr(self, 'enemy_wet_turns', 0), 2)
+                # =================================
                 self.anim_queue.append(("status_enemy", "潮濕!", SCREEN_W - 400, SCREEN_H * 0.25))
                 self.hand.remove(card)
                 if not card.exhaust: self.discard.append(card)
@@ -1468,7 +1489,8 @@ class BattleManager:
             # 立即檢查玩家是否死亡
             if self.player_hp <= 0:
                 self.player_hp = 0
-                self.state = "GAME_OVER"
+                # === 修正錯字： GAME_OVER 改為 GAMEOVER ===
+                self.state = "GAMEOVER"
                 self.anim_queue.append(("player_death",))
 
         # 草原催化者/净善摄位：生成草原核
@@ -1648,6 +1670,7 @@ class BattleManager:
         self.enemy_thorns = 0
         self.enemy_vulnerable_turns = 0
         self.enemy_intent_type = "ATTACK"
+        self.enemy_wet_turns = 0
         
         if w == 30:
             self.stage_type = "FINAL_BOSS"
@@ -1800,6 +1823,7 @@ class BattleManager:
     def process_enemy_turn(self):
         """原來的敵人回合邏輯，從 start_player_turn 之前的邏輯拆分出來"""
         # --- 處理回合開始能力效果 ---
+        # --- 處理回合開始能力效果 ---
         if "造物主工坊" in self.powers or "造物主工坊+" in self.powers:
             temp_attack = copy.deepcopy(random.choice([c for c in CARD_DATABASE.values() if c.type == "ATTACK"]))
             # 檢查是否是升級版本
@@ -1812,6 +1836,15 @@ class BattleManager:
             temp_attack.name += "+"
             temp_attack.damage += 5
             temp_attack.is_temporary = True
+            # === 新增：让临时牌打出后直接消耗，不进入弃牌堆 ===
+            temp_attack.exhaust = True
+            if temp_attack.custom_desc:
+                temp_attack.custom_desc += "。消耗"
+            elif temp_attack.hits > 1 and temp_attack.base_damage > 0:
+                temp_attack.custom_desc = "造成 {dmg} 傷害 x{hits} 次。消耗"
+            elif temp_attack.base_damage > 0:
+                temp_attack.custom_desc = "造成 {dmg} 傷害。消耗"
+            # ============================================
             self.hand.append(temp_attack)
             self.anim_queue.append(("status_enemy", "工坊生成卡牌", 250, SCREEN_H - 350))
 
@@ -1871,6 +1904,14 @@ class BattleManager:
                 counter = damage // 2
                 self.enemy_hp -= counter
                 self.anim_queue.append(("status_enemy", f"反彈!-{counter}", SCREEN_W - 400, SCREEN_H * 0.25))
+                
+                # === 新增這裡：防止怪物被彈死卻還能繼續攻擊 ===
+                if self.enemy_hp <= 0:
+                    self.enemy_hp = 0
+                    self.anim_queue.append(("enemy_death",))
+                    self.generate_rewards()
+                    return
+                # ==========================================
                 
                 # 升级因果逆转：额外抵挡四分之一伤害
                 if "因果逆轉+" in self.powers:
@@ -1949,6 +1990,14 @@ class BattleManager:
             total_dot += bloom_dmg * self.bloom_cores
             self.anim_queue.append(("status_enemy", f"草原核爆!{bloom_dmg * self.bloom_cores}", SCREEN_W - 400, SCREEN_H * 0.25))
             self.bloom_cores = 0
+
+        # === 新增這裡：處理潮濕回合的衰減 ===
+        if getattr(self, 'enemy_wet_turns', 0) > 0:
+            self.enemy_wet_turns -= 1
+            if self.enemy_wet_turns <= 0:
+                self.enemy_wet = False
+                self.anim_queue.append(("status_enemy", "潮濕消退", SCREEN_W - 400, SCREEN_H * 0.25))
+        # =================================
 
         if self.enemy_dot_turns > 0:
             total_dot += self.enemy_dot_damage
@@ -2357,7 +2406,10 @@ def draw_ui_surface(surface, game, mx, my):
             status_y += status_spacing
             
         if game.enemy_wet:
-            wet_ts = font_desc.render("[潮濕]", True, (50, 150, 255))
+            wet_turns = getattr(game, 'enemy_wet_turns', 0)
+            # 加上回合數顯示，如果因為某些機制導致回合數為0但仍潮濕，則當作底線顯示
+            wet_str = f"[潮濕] {wet_turns}回合" if wet_turns > 0 else "[潮濕]"
+            wet_ts = font_desc.render(wet_str, True, (50, 150, 255))
             surface.blit(wet_ts, (w - 430, status_y))
             status_y += status_spacing
 
@@ -3493,7 +3545,9 @@ def main():
                                 # 命运豪赌升级版本：自选4张手牌丢弃
                                 game.selected_cards.append(hovered)
                                 game.hand.remove(hovered)
-                                game.discard.append(hovered)
+                                # === 修改这里：临时牌不进入弃牌堆 ===
+                                if not getattr(hovered, 'is_temporary', False):
+                                    game.discard.append(hovered)
                                 game.anim_queue.append(("status_enemy", f"已選擇 {len(game.selected_cards)}/4 張", 250, SCREEN_H - 350))
                                 
                                 if len(game.selected_cards) >= 4 or len(game.hand) == 0:
@@ -3515,6 +3569,11 @@ def main():
 
                 elif event.button == 3: 
                     if game.state == "SELECT_CARD":
+                        # === 修改這裡：防止命運豪賭被右鍵取消導致崩潰 ===
+                        if game.selection_mode == "FATE_GAMBLE":
+                            game.anim_queue.append(("status_enemy", "無法取消！", 250, SCREEN_H - 350))
+                            continue
+                        # ==========================================
                         game.energy += game.selection_source_card.cost
                         game.selection_mode = None
                         game.selection_source_card = None
