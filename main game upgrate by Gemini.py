@@ -106,6 +106,18 @@ def load_energy_image():
 
 energy_image = load_energy_image()
 
+def load_shield_image():
+    for ext in [".png", ".jpg", ".jpeg"]:
+        shield_path = os.path.join(get_base_path(), "images", "shield" + ext)
+        if os.path.exists(shield_path):
+            try:
+                return pygame.image.load(shield_path).convert_alpha()
+            except:
+                continue
+    return None
+
+shield_image = load_shield_image()
+
 def load_enemy_image(enemy_name):
     base = get_base_path()
     enemy_dir = os.path.join(base, "images", "enemies")
@@ -3136,10 +3148,26 @@ def draw_bar(surface, x, y, cur, mx, block, color):
     if mx > 0:
         pygame.draw.rect(surface, color, (x, y, int((cur / mx) * width), height))
     if block > 0:
-        block_size = 25 * ui_scale
-        pygame.draw.rect(surface, BLUE, (x - 35 * ui_scale, y - 5 * ui_scale, block_size, block_size), border_radius=int(4 * ui_scale))
+        shield_w = 30 * ui_scale
+        shield_h = 34 * ui_scale
+        cx = x - 22 * ui_scale
+        cy = y + 8 * ui_scale
+        if shield_image:
+            img = pygame.transform.smoothscale(shield_image, (int(shield_w), int(shield_h)))
+            surface.blit(img, (cx - shield_w // 2, cy - shield_h // 2))
+        else:
+            shield_points = [
+                (cx, cy - shield_h // 2),
+                (cx + shield_w // 2, cy - shield_h // 2 + 6 * ui_scale),
+                (cx + shield_w // 2, cy + shield_h // 4),
+                (cx, cy + shield_h // 2),
+                (cx - shield_w // 2, cy + shield_h // 4),
+                (cx - shield_w // 2, cy - shield_h // 2 + 6 * ui_scale),
+            ]
+            pygame.draw.polygon(surface, BLUE, shield_points)
+            pygame.draw.polygon(surface, (150, 180, 255), shield_points, width=2)
         b_ts = font_main.render(str(block), True, WHITE)
-        surface.blit(b_ts, b_ts.get_rect(center=(x - 22 * ui_scale, y + 7 * ui_scale)))
+        surface.blit(b_ts, b_ts.get_rect(center=(cx, cy)))
     val_ts = font_hp.render(f"{cur}/{mx}", True, WHITE)
     surface.blit(val_ts, (x + width // 2 - val_ts.get_width() // 2, y - 25 * ui_scale))
 
@@ -3742,7 +3770,6 @@ def main():
                                     game.selected_cards.clear()
                                     game.selection_mode = None
                                     game.state = "BATTLE"
-                                    return
                             
                             if game.selection_mode != "FATE_GAMBLE":
                                 game.selection_mode = None
