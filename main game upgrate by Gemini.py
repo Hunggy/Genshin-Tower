@@ -1278,10 +1278,18 @@ class BattleManager:
     def play_card(self, card, start_x, start_y):
         if self.energy >= card.cost:
             self.cards_played_this_turn += 1 # 增加連擊計數
+            
+            # 1. 記錄打出牌前的波次與無盡輪次
+            prev_wave = self.current_wave
+            prev_loop = self.endless_loop_count
+            
             self.trigger_target_mark(card)
-            if self.state not in ("BATTLE", "SELECT_CARD"):
+            
+            # 2. 判斷：如果狀態改變，或者無盡模式下進入了新輪次(代表Boss被真傷擊殺)，則中斷結算
+            if self.state not in ("BATTLE", "SELECT_CARD") or self.current_wave != prev_wave or self.endless_loop_count != prev_loop:
                 return True
-            card_name = card.base_name  
+                
+            card_name = card.base_name
             
             # --- 處理卡牌類型邏輯 ---
             if card.type == "POWER":
@@ -1573,7 +1581,8 @@ class BattleManager:
 
                 self.apply_damage(final_damage, card, start_x, start_y)
                 self.player_block += card.block
-                self.hand.remove(card)
+                if card in self.hand:
+                    self.hand.remove(card)
                 self._dispose_played_card(card)
 
             if self.enemy_hp <= 0:
@@ -1684,12 +1693,14 @@ class BattleManager:
             if self.is_endless:
                 # 進入下一輪無盡
                 self.endless_loop_count += 1
-                self.current_wave = 1
+                # 【修改】將波次設為 0，這樣等一下領完獎勵後 current_wave += 1，就會剛好進入下一輪的第 1 關
+                self.current_wave = 0 
                 self.anim_queue.append(("status_enemy", f"進入無盡第 {self.endless_loop_count} 輪", 640, 360))
                 # 這裡可以加入一些難度提升邏輯
                 self.increase_difficulty() 
-                self.start_next_wave()
-                return
+                
+                # 【刪除】移除了 self.start_next_wave() 和 return
+                # 讓程式不要在這裡中斷，繼續往下走，生成獎勵並切換到 REWARD 介面！
             else:
                 # 一般模式結束
                 self.state = "JUMP"
@@ -2084,12 +2095,16 @@ class BattleManager:
         self.player_block = 0
         
         # --- 净善摄位持续效果处理 ---
-        if self.maya_active and hasattr(self, 'maya_turns') and self.maya_turns > 0:
-            self.grass_buff = True
-            self.maya_turns -= 1
-        else:
-            self.grass_buff = False
-            self.maya_active = False
+        # --- 净善摄位持续效果处理 ---
+        if self.maya_active and hasattr(self, 'maya_turns'):
+            self.maya_turns -= 1  # 先扣除持续回合数
+            
+            if self.maya_turns <= 0:
+                # 扣除后如果归零，立刻关闭状态，不带入下一回合
+                self.grass_buff = False
+                self.maya_active = False
+            else:
+                self.grass_buff = True
         
         # --- 聖遺物與技能效果：回合開始 ---
         self.energy = self.base_energy + self.next_turn_energy
