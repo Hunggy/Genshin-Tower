@@ -4,6 +4,7 @@ import sys
 import copy
 import os
 import math
+import json
 
 
 def get_base_path():
@@ -11,6 +12,21 @@ def get_base_path():
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         return sys._MEIPASS
     return os.path.dirname(os.path.abspath(__file__))
+
+
+def get_save_path():
+    """取得存檔檔案完整路徑：開發時在腳本目錄，打包後在用戶文件目錄"""
+    if getattr(sys, 'frozen', False):
+        # PyInstaller 打包後：使用用戶文件目錄，避免臨時目錄被清理導致存檔丟失
+        save_dir = os.path.join(os.path.expanduser("~"), "Documents", "GenshinSpire")
+    else:
+        # 開發環境：與腳本檔案同級
+        save_dir = os.path.dirname(os.path.abspath(__file__))
+    
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    
+    return os.path.join(save_dir, "savegame.json")
 
 # --- 1. 初始化與基礎配置 ---
 pygame.init()
@@ -306,6 +322,9 @@ ELEMENT_COUNTERS = {
     "Geo": ["Geo", "None"],      # 岩盾怕岩、重擊(物理)
     "None": []
 }
+
+# 存檔系統常量
+SAVE_VERSION = 1
 
 
 class Animation:
@@ -706,16 +725,17 @@ CARD_DATABASE = {
 
 # 卡牌中文名 -> CARD_DATABASE 鍵（用於能力牌到期歸還牌庫等）
 CARD_NAME_TO_KEY = {
+    "打击": "STRIKE", "防御": "DEFEND", "西风重击": "PIERCE", "千岩固牢": "IRON_WALL",
     "天街巡游": "REWARD_1", "星尘结界": "REWARD_2", "元素爆发": "REWARD_3",
     "荒星防护": "REWARD_4", "大剑重击": "BURST_FLAME", "旋风护盾": "STORM_SHIELD",
     "雨神之护": "RAIN_GUARD", "潮汐波": "TIDAL_WAVE",
     "不灭之火": "SACRIFICE", "碎冰重击": "SHATTER", "黎明·斩击": "DAWN",
-    "净善摄位": "MAYA", "冰霜新星": "FROST_NOVA",
+    "净善摄位": "MAYA", "冰霜新星": "FROST_NOVA", "水刃": "HYDRO_BLADE",
     "天基烈焰": "HEAVEN_FLAME", "雷霆连击": "THUNDER_COMBO", "死神收割": "REAPER",
     "神圣屏障": "DIVINE_BARRIER", "時空停滯": "TIME_STASIS", "命運豪賭": "FATE_GAMBLE",
     "虛空血脈": "VOID_BLOOD", "無限迴路": "INFINITE_LOOP",
     "造物主工坊": "CREATOR_WORKSHOP", "因果逆轉": "KARMA_REVERSE",
-    "灵光一闪": "DISCOVERY",
+    "灵光一闪": "DISCOVERY", "虚空": "VOID",
 }
 
 RELIC_DATABASE = {
@@ -799,6 +819,7 @@ class BattleManager:
         self.enemy_frozen = False
         self.enemy_frozen_turns = 0
         self.enemy_wet = False
+        self.enemy_wet_turns = 0
         self.enemy_vulnerable_turns = 0
         self.enemy_poison_turns = 0
         self.enemy_intent_type = "ATTACK"
@@ -813,6 +834,8 @@ class BattleManager:
         # 交互機制狀態
         self.reactions_this_turn = 0
         self.cards_played_this_turn = 0
+        self.control_resistance = 0
+        self.control_count_this_turn = 0
         self.enemy_stance = "ATTACK"
         self.enemy_stance_enabled = False  # 僅部分精英/BOSS 擁有節奏姿態
         
@@ -961,6 +984,8 @@ class BattleManager:
         self.strength = 0
         self.next_turn_energy = 0
         self.attack_played_count = 0
+        self.control_resistance = 0
+        self.control_count_this_turn = 0
         
         self.pending_relic = None
         self.pending_upgrade = False
@@ -2184,6 +2209,304 @@ class BattleManager:
         if self.state == "ENEMY_TURN":
             self.state = "BATTLE"
 
+    # --- 存檔系統 ---
+    def _card_to_dict(self, card):
+        """將卡牌序列化為字典"""
+        return {
+            "base_name": card.base_name,
+            "upgraded": card.upgraded,
+            "permanent_dmg_bonus": getattr(card, "permanent_dmg_bonus", 0),
+            "cost": card.cost,
+            "original_cost": card.original_cost,
+            "is_temporary": getattr(card, "is_temporary", False),
+            "is_marked": getattr(card, "is_marked", False),
+        }
+
+    def _card_from_dict(self, d):
+        """從字典反序列化卡牌"""
+        key = CARD_NAME_TO_KEY.get(d.get("base_name"))
+        if not key:
+            return None
+        template = CARD_DATABASE.get(key)
+        if not template:
+            return None
+        new_card = copy.deepcopy(template)
+        if d.get("upgraded"):
+            new_card.upgrade()
+        new_card.permanent_dmg_bonus = d.get("permanent_dmg_bonus", 0)
+        new_card.cost = d.get("cost", new_card.original_cost)
+        new_card.original_cost = d.get("original_cost", new_card.cost)
+        new_card.is_temporary = d.get("is_temporary", False)
+        new_card.is_marked = d.get("is_marked", False)
+        return new_card
+
+    def _pile_to_dict(self, pile):
+        """序列化牌堆"""
+        return [self._card_to_dict(c) for c in pile]
+
+    def _pile_from_dict(self, pile_list):
+        """反序列化牌堆"""
+        result = []
+        for d in pile_list:
+            card = self._card_from_dict(d)
+            if card:
+                result.append(card)
+        return result
+
+    def save_to_dict(self):
+        """將當前戰鬥狀態序列化為字典"""
+        return {
+            "version": SAVE_VERSION,
+            "state": self.state,
+            "player": {
+                "max_hp": self.player_max_hp,
+                "hp": self.player_hp,
+                "block": self.player_block,
+                "base_energy": self.base_energy,
+                "energy": self.energy,
+                "strength": self.strength,
+                "next_turn_energy": self.next_turn_energy,
+            },
+            "enemy": {
+                "max_hp": self.enemy_max_hp,
+                "hp": self.enemy_hp,
+                "min_dmg": self.enemy_min_dmg,
+                "max_dmg": self.enemy_max_dmg,
+                "intent": self.enemy_intent,
+                "name": self.enemy_name,
+                "stage_type": self.stage_type,
+                "dot_turns": self.enemy_dot_turns,
+                "dot_damage": self.enemy_dot_damage,
+                "stun_turns": self.enemy_stun_turns,
+                "petrify_turns": self.enemy_petrify_turns,
+                "frozen": self.enemy_frozen,
+                "frozen_turns": self.enemy_frozen_turns,
+                "wet": self.enemy_wet,
+                "wet_turns": self.enemy_wet_turns,
+                "vulnerable_turns": self.enemy_vulnerable_turns,
+                "poison_turns": self.enemy_poison_turns,
+                "intent_type": self.enemy_intent_type,
+                "hit_shield": self.enemy_hit_shield,
+                "shield_element": self.enemy_shield_element,
+                "charge_turns": self.enemy_charge_turns,
+                "charge_max": self.enemy_charge_max,
+                "scaling_strength": self.enemy_scaling_strength,
+                "thorns": self.enemy_thorns,
+            },
+            "battle": {
+                "current_wave": self.current_wave,
+                "max_waves": self.max_waves,
+                "is_endless": self.is_endless,
+                "endless_loop_count": self.endless_loop_count,
+                "selected_mode": getattr(self, "selected_mode", "NORMAL"),
+                "turn_count": self.turn_count,
+                "reactions_this_turn": self.reactions_this_turn,
+                "cards_played_this_turn": self.cards_played_this_turn,
+                "attack_played_count": self.attack_played_count,
+                "control_resistance": getattr(self, "control_resistance", 0),
+                "control_count_this_turn": getattr(self, "control_count_this_turn", 0),
+                "enemy_stance": self.enemy_stance,
+                "enemy_stance_enabled": self.enemy_stance_enabled,
+                "bloom_cores": self.bloom_cores,
+            },
+            "mechanics": {
+                "maya_active": self.maya_active,
+                "maya_turns": self.maya_turns,
+                "grass_buff": self.grass_buff,
+                "pyro_damage_bonus": self.pyro_damage_bonus,
+            },
+            "deck": self._pile_to_dict(self.deck),
+            "hand": self._pile_to_dict(self.hand),
+            "discard": self._pile_to_dict(self.discard),
+            "exhaust_pile": self._pile_to_dict(self.exhaust_pile),
+            "sidelined_power_cards": self._pile_to_dict(self.sidelined_power_cards),
+            "owned_cards": self._pile_to_dict(self.owned_cards),
+            "powers": self.powers,
+            "powers_with_group": self.powers_with_group,
+            "relics": self.relics,
+            "obtained_rewards": self.obtained_rewards,
+            "settings": {
+                "volume": self.volume,
+                "fullscreen": self.fullscreen,
+                "flash_enabled": self.flash_enabled,
+                "current_character": self.current_character,
+            },
+            "ui": {
+                "show_deck": self.show_deck,
+                "deck_scroll": self.deck_scroll,
+                "deck_sort_mode": self.deck_sort_mode,
+                "show_mechanics_guide": self.show_mechanics_guide,
+                "mechanics_scroll": self.mechanics_scroll,
+            },
+        }
+
+    def load_from_dict(self, data):
+        """從字典恢復戰鬥狀態"""
+        if data.get("version") != SAVE_VERSION:
+            return False
+        # 設置
+        s = data.get("settings", {})
+        self.volume = s.get("volume", 0.5)
+        self.fullscreen = s.get("fullscreen", False)
+        self.flash_enabled = s.get("flash_enabled", True)
+        self.current_character = s.get("current_character", "Default")
+
+        # 玩家
+        p = data.get("player", {})
+        self.player_max_hp = p.get("max_hp", 50)
+        self.player_hp = p.get("hp", 50)
+        self.player_block = p.get("block", 0)
+        self.base_energy = p.get("base_energy", 3)
+        self.energy = p.get("energy", self.base_energy)
+        self.strength = p.get("strength", 0)
+        self.next_turn_energy = p.get("next_turn_energy", 0)
+
+        # 敵人
+        e = data.get("enemy", {})
+        self.enemy_max_hp = e.get("max_hp", 80)
+        self.enemy_hp = e.get("hp", 80)
+        self.enemy_min_dmg = e.get("min_dmg", 7)
+        self.enemy_max_dmg = e.get("max_dmg", 12)
+        self.enemy_intent = e.get("intent", 0)
+        self.enemy_name = e.get("name", "基礎雜兵")
+        self.enemy_image = load_enemy_image(self.enemy_name)
+        self.stage_type = e.get("stage_type", "NORMAL")
+        self.enemy_dot_turns = e.get("dot_turns", 0)
+        self.enemy_dot_damage = e.get("dot_damage", 0)
+        self.enemy_stun_turns = e.get("stun_turns", 0)
+        self.enemy_petrify_turns = e.get("petrify_turns", 0)
+        self.enemy_frozen = e.get("frozen", False)
+        self.enemy_frozen_turns = e.get("frozen_turns", 0)
+        self.enemy_wet = e.get("wet", False)
+        self.enemy_wet_turns = e.get("wet_turns", 0)
+        self.enemy_vulnerable_turns = e.get("vulnerable_turns", 0)
+        self.enemy_poison_turns = e.get("poison_turns", 0)
+        self.enemy_intent_type = e.get("intent_type", "ATTACK")
+        self.enemy_hit_shield = e.get("hit_shield", 0)
+        self.enemy_shield_element = e.get("shield_element", "None")
+        self.enemy_charge_turns = e.get("charge_turns", 0)
+        self.enemy_charge_max = e.get("charge_max", 4)
+        self.enemy_scaling_strength = e.get("scaling_strength", 0)
+        self.enemy_thorns = e.get("thorns", 0)
+
+        # 戰鬥
+        b = data.get("battle", {})
+        self.current_wave = b.get("current_wave", 1)
+        self.max_waves = b.get("max_waves", 30)
+        self.is_endless = b.get("is_endless", False)
+        self.endless_loop_count = b.get("endless_loop_count", 0)
+        self.selected_mode = b.get("selected_mode", "NORMAL")
+        self.turn_count = b.get("turn_count", 0)
+        self.reactions_this_turn = b.get("reactions_this_turn", 0)
+        self.cards_played_this_turn = b.get("cards_played_this_turn", 0)
+        self.attack_played_count = b.get("attack_played_count", 0)
+        self.control_resistance = b.get("control_resistance", 0)
+        self.control_count_this_turn = b.get("control_count_this_turn", 0)
+        self.enemy_stance = b.get("enemy_stance", "ATTACK")
+        self.enemy_stance_enabled = b.get("enemy_stance_enabled", False)
+        self.bloom_cores = b.get("bloom_cores", 0)
+
+        # 機制
+        m = data.get("mechanics", {})
+        self.maya_active = m.get("maya_active", False)
+        self.maya_turns = m.get("maya_turns", 0)
+        self.grass_buff = m.get("grass_buff", False)
+        self.pyro_damage_bonus = m.get("pyro_damage_bonus", 0)
+
+        # 牌堆
+        self.deck = self._pile_from_dict(data.get("deck", []))
+        self.hand = self._pile_from_dict(data.get("hand", []))
+        self.discard = self._pile_from_dict(data.get("discard", []))
+        self.exhaust_pile = self._pile_from_dict(data.get("exhaust_pile", []))
+        self.sidelined_power_cards = self._pile_from_dict(data.get("sidelined_power_cards", []))
+        self.owned_cards = self._pile_from_dict(data.get("owned_cards", []))
+
+        self.powers = data.get("powers", [])
+        self.powers_with_group = data.get("powers_with_group", {})
+        self.relics = data.get("relics", [])
+        self.obtained_rewards = data.get("obtained_rewards", [])
+
+        # UI
+        u = data.get("ui", {})
+        self.show_deck = u.get("show_deck", False)
+        self.deck_scroll = u.get("deck_scroll", 0)
+        self.deck_sort_mode = u.get("deck_sort_mode", "TYPE")
+        self.show_mechanics_guide = u.get("show_mechanics_guide", False)
+        self.mechanics_scroll = u.get("mechanics_scroll", 0)
+
+        # 重置臨時動畫狀態
+        self.state = "BATTLE"
+        self.anim_queue = []
+        self.jump_progress = 0
+        self.previous_battle_state = None
+        return True
+
+
+def has_savegame():
+    """檢查是否存在存檔"""
+    return os.path.exists(get_save_path())
+
+def get_savegame_mode():
+    """讀取存檔中的模式名稱，若無存檔或讀取失敗則返回 None"""
+    try:
+        if not os.path.exists(get_save_path()):
+            return None
+        with open(get_save_path(), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data.get("battle", {}).get("selected_mode", None)
+    except Exception:
+        return None
+
+
+MODE_DISPLAY_NAMES = {
+    "TEST": "測試模式",
+    "NORMAL": "普通模式",
+    "BURST": "無雙模式",
+    "HARD": "高難模式",
+    "ENDLESS": "無限模式",
+}
+
+def save_game(game):
+    """保存當前遊戲狀態到 JSON 文件"""
+    try:
+        # 允許在戰鬥相關狀態存檔（包含從戰鬥進入的設置界面）
+        valid_battle = ("BATTLE", "ENEMY_TURN")
+        in_settings = game.state == "SETTINGS" and game.previous_battle_state in valid_battle
+        if game.state not in valid_battle and not in_settings:
+            print("只能在戰鬥中存檔")
+            return False
+        data = game.save_to_dict()
+        # 若從設置界面存檔，修正記錄的狀態為實際戰鬥狀態
+        if data.get("state") == "SETTINGS" and game.previous_battle_state in valid_battle:
+            data["state"] = game.previous_battle_state
+        with open(get_save_path(), "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        print("存檔成功")
+        return True
+    except Exception as e:
+        print(f"存檔失敗: {e}")
+        return False
+
+def load_game(game):
+    """從 JSON 文件加載遊戲狀態"""
+    try:
+        if not os.path.exists(get_save_path()):
+            return False
+        with open(get_save_path(), "r", encoding="utf-8") as f:
+            data = json.load(f)
+        ok = game.load_from_dict(data)
+        if ok:
+            play_bgm(game.volume, is_endless=game.is_endless)
+        return ok
+    except Exception as e:
+        print(f"讀檔失敗: {e}")
+        return False
+
+def delete_savegame():
+    """刪除存檔文件"""
+    if os.path.exists(get_save_path()):
+        os.remove(get_save_path())
+
 
 # --- 特殊機制圖鑑 ---
 MECHANICS_GUIDE_ENTRIES = [
@@ -2282,6 +2605,11 @@ def draw_main_menu_surface(surface, game, mx, my):
         {"id": "SETTINGS", "text": "遊戲設置"},
         {"id": "QUIT", "text": "退出遊戲"}
     ]
+    # 如果存在存檔，在主菜單頂部插入「繼續XX模式」按鈕，文字根據存檔模式動態決定
+    saved_mode = get_savegame_mode()
+    if saved_mode:
+        mode_name = MODE_DISPLAY_NAMES.get(saved_mode, saved_mode)
+        buttons.insert(0, {"id": "CONTINUE", "text": f"繼續{mode_name}"})
     menu_rects = {}
     for i, btn in enumerate(buttons):
         rect = pygame.Rect(w // 2 - 150, h * 0.45 + i * 80, 300, 50)
@@ -2433,16 +2761,23 @@ def draw_settings_surface(surface, game, mx, my, mouse_pressed):
 
     # --- 返回/退出按鈕 ---
     if game.previous_battle_state == "BATTLE":
-        # 局內設置：顯示「返回戰鬥」和「退出對局」
-        back_rect = pygame.Rect(w // 2 - 220, h * 0.85, 180, 50)
-        quit_rect = pygame.Rect(w // 2 + 40, h * 0.85, 180, 50)
+        # 局內設置：顯示「返回戰鬥」「保存並退出」「退出對局」
+        back_rect = pygame.Rect(w // 2 - 320, h * 0.85, 180, 50)
+        save_rect = pygame.Rect(w // 2 - 125, h * 0.85, 250, 50)
+        quit_rect = pygame.Rect(w // 2 + 140, h * 0.85, 180, 50)
         setting_rects["BACK"] = (back_rect, 0, 0)
+        setting_rects["SAVE"] = (save_rect, 0, 0)
         setting_rects["QUIT_BATTLE"] = (quit_rect, 0, 0)
 
         is_back_hover = back_rect.collidepoint((mx, my))
         pygame.draw.rect(surface, (50, 150, 50) if is_back_hover else (40, 100, 40), back_rect, border_radius=8)
         back_ts = font_main.render("返回戰鬥", True, WHITE)
         surface.blit(back_ts, back_ts.get_rect(center=back_rect.center))
+
+        is_save_hover = save_rect.collidepoint((mx, my))
+        pygame.draw.rect(surface, (50, 100, 150) if is_save_hover else (35, 70, 110), save_rect, border_radius=8)
+        save_ts = font_main.render("保存並退出", True, WHITE)
+        surface.blit(save_ts, save_ts.get_rect(center=save_rect.center))
 
         is_quit_hover = quit_rect.collidepoint((mx, my))
         pygame.draw.rect(surface, (150, 50, 50) if is_quit_hover else (100, 40, 40), quit_rect, border_radius=8)
@@ -3600,7 +3935,12 @@ def main():
                             if guide_close_rect.collidepoint((mx, my)):
                                 game.show_mechanics_guide = False
                                 game.mechanics_scroll = 0
+                        elif menu_rects.get("CONTINUE") and menu_rects["CONTINUE"].collidepoint((mx, my)):
+                            if load_game(game):
+                                game.state = "BATTLE"
+                                game.previous_battle_state = None
                         elif menu_rects.get("START") and menu_rects["START"].collidepoint((mx, my)):
+                            delete_savegame()
                             game.state = "MODE_SELECT"
                         elif menu_rects.get("SETTINGS") and menu_rects["SETTINGS"].collidepoint((mx, my)):
                             game.state = "SETTINGS"
@@ -3618,11 +3958,18 @@ def main():
                                 game.previous_battle_state = None
                             else:
                                 game.state = "MAIN_MENU"
-                        elif setting_rects.get("QUIT_BATTLE") and setting_rects["QUIT_BATTLE"][0].collidepoint((mx, my)):
-                            # 退出對局：重置遊戲狀態並返回主選單
+                        elif setting_rects.get("SAVE") and setting_rects["SAVE"][0].collidepoint((mx, my)):
+                            # 保存並退出：存檔後返回主選單
+                            save_game(game)
                             game.state = "MAIN_MENU"
                             game.previous_battle_state = None
-                            game.__init__()
+                            game.show_deck = False
+                        elif setting_rects.get("QUIT_BATTLE") and setting_rects["QUIT_BATTLE"][0].collidepoint((mx, my)):
+                            # 退出對局：清除存檔並返回主選單，保留設置
+                            delete_savegame()
+                            game.state = "MAIN_MENU"
+                            game.previous_battle_state = None
+                            game.reset_game()
                         else:
                             for res_id, (rect, val1, val2) in setting_rects.items():
                                 if res_id == "BACK": continue
@@ -3792,6 +4139,8 @@ def main():
                                 game.state = "BATTLE"
 
                     elif game.state in ["VICTORY", "GAMEOVER"]:
+                        if game.state == "GAMEOVER":
+                            delete_savegame()
                         game.reset_game()
                         sound_mgr.set_volume(game.volume)
 
