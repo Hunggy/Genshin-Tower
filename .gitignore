@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/*.egg/
+
+# Pytest
+.pytest_cache/
+*.coverage
+
+# Save files
+savegame.json
+savegame_*.json
+
+# Build artifacts
+build/
+*.spec
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
