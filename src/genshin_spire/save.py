@@ -13,26 +13,59 @@ MODE_DISPLAY_NAMES = {
     "ENDLESS": "無限模式",
 }
 
-
-def has_savegame():
-    """檢查是否存在存檔"""
-    return os.path.exists(get_save_path())
+_MAX_SLOTS = 3
 
 
-def get_savegame_mode():
+def list_save_slots():
+    """返回每個槽位的狀態列表 {slot: {has_save, mode, wave, time} or None}"""
+    result = {}
+    for slot in range(1, _MAX_SLOTS + 1):
+        path = get_save_path(slot)
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                battle = data.get("battle", {})
+                result[slot] = {
+                    "has_save": True,
+                    "mode": battle.get("selected_mode", "NORMAL"),
+                    "wave": battle.get("current_wave", 1),
+                    "is_endless": battle.get("is_endless", False),
+                }
+            except Exception:
+                result[slot] = {"has_save": False}
+        else:
+            result[slot] = {"has_save": False}
+    return result
+
+
+def has_savegame(slot=None):
+    """檢查是否存在存檔。若未指定 slot，檢查任意槽位。"""
+    if slot is not None:
+        return os.path.exists(get_save_path(slot))
+    for s in range(1, _MAX_SLOTS + 1):
+        if os.path.exists(get_save_path(s)):
+            return True
+    return False
+
+
+def get_savegame_mode(slot=1):
     """讀取存檔中的模式名稱，若無存檔或讀取失敗則返回 None"""
     try:
-        if not os.path.exists(get_save_path()):
+        path = get_save_path(slot)
+        if not os.path.exists(path):
             return None
-        with open(get_save_path(), "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         return data.get("battle", {}).get("selected_mode", None)
     except Exception:
         return None
 
 
-def save_game(game):
+def save_game(game, slot=None):
     """保存當前遊戲狀態到 JSON 文件"""
+    if slot is None:
+        slot = getattr(game, "current_save_slot", 1)
     try:
         # 允許在戰鬥相關狀態存檔（包含從戰鬥進入的設置界面）
         valid_battle = ("BATTLE", "ENEMY_TURN")
@@ -44,24 +77,29 @@ def save_game(game):
         # 若從設置界面存檔，修正記錄的狀態為實際戰鬥狀態
         if data.get("state") == "SETTINGS" and game.previous_battle_state in valid_battle:
             data["state"] = game.previous_battle_state
-        with open(get_save_path(), "w", encoding="utf-8") as f:
+        data["save_slot"] = slot
+        with open(get_save_path(slot), "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
-        print("存檔成功")
+        print(f"存檔成功 (槽位 {slot})")
         return True
     except Exception as e:
         print(f"存檔失敗: {e}")
         return False
 
 
-def load_game(game):
+def load_game(game, slot=None):
     """從 JSON 文件加載遊戲狀態"""
+    if slot is None:
+        slot = getattr(game, "current_save_slot", 1)
     try:
-        if not os.path.exists(get_save_path()):
+        path = get_save_path(slot)
+        if not os.path.exists(path):
             return False
-        with open(get_save_path(), "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
         ok = game.load_from_dict(data)
         if ok:
+            game.current_save_slot = data.get("save_slot", slot)
             from .audio import play_bgm
             play_bgm(game.volume, is_endless=game.is_endless)
         return ok
@@ -70,10 +108,13 @@ def load_game(game):
         return False
 
 
-def delete_savegame():
-    """刪除存檔文件"""
-    if os.path.exists(get_save_path()):
-        os.remove(get_save_path())
+def delete_savegame(slot=None):
+    """刪除存檔文件。若未指定 slot，刪除當前遊戲的存檔槽位。"""
+    if slot is None:
+        slot = 1  # fallback
+    path = get_save_path(slot)
+    if os.path.exists(path):
+        os.remove(path)
 
 
 # --- 特殊機制圖鑑 ---

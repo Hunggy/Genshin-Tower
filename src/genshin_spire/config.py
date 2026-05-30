@@ -20,7 +20,7 @@ def get_base_path():
     return PROJECT_ROOT
 
 
-def get_save_path():
+def get_save_path(slot=1):
     """取得存檔檔案完整路徑：開發時在專案根目錄，打包後在用戶文件目錄"""
     if getattr(sys, 'frozen', False):
         # PyInstaller 打包後：使用用戶文件目錄，避免臨時目錄被清理導致存檔丟失
@@ -32,7 +32,7 @@ def get_save_path():
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
 
-    return os.path.join(save_dir, "savegame.json")
+    return os.path.join(save_dir, f"savegame_{slot}.json")
 
 
 SCREEN_W, SCREEN_H = 1280, 720

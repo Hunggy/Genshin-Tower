@@ -52,6 +52,9 @@ class BattleManager:
 
         # 成就系統
         self.unlocked_achievements = set()
+        self.current_save_slot = 1
+        self.show_slot_select = False
+        self.slot_select_for_continue = False
 
         self.enemy_max_hp = 80
         self.enemy_hp = 80
@@ -312,6 +315,10 @@ class BattleManager:
         self.stats_total_kills = 0
         self.stats_total_turns = 0
         self.stats_total_reactions = 0
+        self.unlocked_achievements = set()
+        self.current_save_slot = 1
+        self.show_slot_select = False
+        self.slot_select_for_continue = False
         self.state = "MAIN_MENU"
 
         self.volume = vol
