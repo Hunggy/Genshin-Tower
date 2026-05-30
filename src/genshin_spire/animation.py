@@ -3,7 +3,7 @@ import math
 
 from .config import SCREEN_W, SCREEN_H, WHITE, RED, BLUE, GREEN
 from .resources import get_ui_font
-from .card import Card
+from .card import CARD_DATABASE  # type reference
 
 
 class Animation:

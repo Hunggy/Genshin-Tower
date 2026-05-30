@@ -27,7 +27,6 @@ from .animation import (
 from .audio import SoundManager, play_bgm
 from .save import (
     has_savegame, get_savegame_mode, save_game, load_game, delete_savegame,
-    MODE_DISPLAY_NAMES, MECHANICS_GUIDE_ENTRIES,
 )
 from .battle import BattleManager
 from .ui import (

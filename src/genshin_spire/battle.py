@@ -46,6 +46,7 @@ class BattleManager:
         self.enemy_name = "基礎雜兵"
         self.enemy_image = load_enemy_image(self.enemy_name)
         self.stage_type = "NORMAL"
+        self.selected_mode = "NORMAL"
         self.previous_battle_state = None
 
         # 牌組相關
@@ -198,6 +199,7 @@ class BattleManager:
         self.enemy_name = "基礎雜兵"
         self.enemy_image = load_enemy_image(self.enemy_name)
         self.stage_type = "NORMAL"
+        self.selected_mode = "NORMAL"
         self.previous_battle_state = None
 
         self.current_wave = 1
