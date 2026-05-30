@@ -719,7 +719,7 @@ CARD_DATABASE = {
     "INFINITE_LOOP": Card("無限迴路", 2, description="每打出 3 張攻擊牌，隨機抽 1 張技能牌", type="POWER", element="None"),
     "CREATOR_WORKSHOP": Card("造物主工坊", 3, description="每回合開始獲得 1 張 1 費升級臨時攻擊牌", type="POWER", element="None"),
     "KARMA_REVERSE": Card("因果逆轉", 2, description="受到非物理傷害或負面效果時，敵人獲得3易傷3中毒；受到物理傷害時，反彈一半傷害給敵人", type="POWER", element="None"),
-    "VOID": Card("虛空", 0, description="虛無。打出後消失", type="SKILL", exhaust=True, element="None"),
+    "VOID": Card("虚空", 0, description="虛無。打出後消失", type="SKILL", exhaust=True, element="None"),
     "DISCOVERY": Card("灵光一闪", 1, description="從牌組或棄牌堆三選一加入手牌。消耗", type="SKILL", exhaust=True, element="None"),
 }
 
