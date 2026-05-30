@@ -123,6 +123,7 @@ class BattleManager:
 
         # 交互機制狀態
         self.reactions_this_turn = 0
+        self.bloom_generated_this_turn = 0
         self.cards_played_this_turn = 0
         self.control_resistance = 0
         self.control_count_this_turn = 0
@@ -272,6 +273,7 @@ class BattleManager:
         self.selected_cards = []  # 通用选择模式已选择的卡牌
         self.cards_played_this_turn = 0 # 本回合已打出的卡牌數
         self.reactions_this_turn = 0    # 本回合觸發的反應次數
+        self.bloom_generated_this_turn = 0
         self.enemy_stance = "ATTACK"
         self.enemy_stance_enabled = False
 
@@ -391,6 +393,7 @@ class BattleManager:
         self.roll_enemy_intent()
         self.cards_played_this_turn = 0
         self.reactions_this_turn = 0
+        self.bloom_generated_this_turn = 0
         self.state = "BATTLE"
         self.draw_cards(5)
         self.refresh_target_mark()
@@ -1009,14 +1012,18 @@ class BattleManager:
                 self.state = "GAMEOVER"
                 self.anim_queue.append(("player_death",))
 
-        # 草原催化者/净善摄位：生成草原核
+        # 草原催化者/净善摄位：生成草原核（每 3 個草原核計 1 次反應）
         if self.enemy_wet and "Catalyst" in [r["id"] for r in self.relics]:
             self.bloom_cores += 1
-            self.reactions_this_turn += 1
+            self.bloom_generated_this_turn += 1
+            if self.bloom_generated_this_turn % 3 == 0:
+                self.reactions_this_turn += 1
             self.anim_queue.append(("status_enemy", f"草原核+{self.bloom_cores}", SCREEN_W - 300, SCREEN_H * 0.3))
         elif self.grass_buff:
             self.bloom_cores += 1
-            self.reactions_this_turn += 1
+            self.bloom_generated_this_turn += 1
+            if self.bloom_generated_this_turn % 3 == 0:
+                self.reactions_this_turn += 1
             self.anim_queue.append(("status_enemy", f"草原核+{self.bloom_cores}", SCREEN_W - 300, SCREEN_H * 0.3))
 
     def finish_card_play(self, card, sx, sy):
@@ -1301,6 +1308,7 @@ class BattleManager:
         self.draw_cards(5)
         self.refresh_target_mark()
         self.reactions_this_turn = 0
+        self.bloom_generated_this_turn = 0
         self.state = "BATTLE"
 
     def end_turn(self):
@@ -1501,6 +1509,7 @@ class BattleManager:
         self.draw_cards(5)
         self.refresh_target_mark()
         self.reactions_this_turn = 0
+        self.bloom_generated_this_turn = 0
 
         # --- 應用持續傷害 ---
         total_dot = 0
