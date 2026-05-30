@@ -293,18 +293,18 @@ def main():
                     game.end_turn()
                 elif event.key in (pygame.K_w, pygame.K_UP):
                     if game.show_deck:
-                        game.deck_scroll += 40
-                    elif game.show_mechanics_guide:
-                        game.mechanics_scroll += 28
-                    elif game.state == "UPGRADE_CARD":
-                        game.upgrade_scroll += 40
-                elif event.key in (pygame.K_s, pygame.K_DOWN):
-                    if game.show_deck:
                         game.deck_scroll -= 40
                     elif game.show_mechanics_guide:
                         game.mechanics_scroll -= 28
                     elif game.state == "UPGRADE_CARD":
                         game.upgrade_scroll -= 40
+                elif event.key in (pygame.K_s, pygame.K_DOWN):
+                    if game.show_deck:
+                        game.deck_scroll += 40
+                    elif game.show_mechanics_guide:
+                        game.mechanics_scroll += 28
+                    elif game.state == "UPGRADE_CARD":
+                        game.upgrade_scroll += 40
                 elif pygame.K_1 <= event.key <= pygame.K_7 and game.state == "BATTLE" and not game.show_deck and not game.show_mechanics_guide:
                     idx = event.key - pygame.K_1
                     if idx < len(game.hand):
