@@ -8,3 +8,4 @@ from .discovery import draw_discovery_screen_surface
 from .deck_view import draw_deck_view_surface
 from .upgrade import draw_upgrade_view_surface
 from .mechanics import draw_mechanics_guide_overlay
+from .slot_select import draw_slot_select_overlay

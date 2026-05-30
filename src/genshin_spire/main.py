@@ -39,6 +39,7 @@ from .ui import (
     draw_deck_view_surface,
     draw_upgrade_view_surface,
     draw_mechanics_guide_overlay,
+    draw_slot_select_overlay,
 )
 
 
@@ -166,7 +167,7 @@ def main():
             main_surface.blit(logo_ts, logo_ts.get_rect(center=(w // 2, h // 2)))
 
         elif game.state == "MAIN_MENU":
-            menu_rects, slot_rects = draw_main_menu_surface(main_surface, game, mx, my)
+            menu_rects = draw_main_menu_surface(main_surface, game, mx, my)
             # 在主選單也要繪製機制圖 (如果打開的話)
             if game.show_mechanics_guide:
                 guide_close_rect = draw_mechanics_guide_overlay(main_surface, game, mx, my)
@@ -262,6 +263,11 @@ def main():
         if game.show_mechanics_guide:
             guide_close_rect = draw_mechanics_guide_overlay(main_surface, game, mx, my)
 
+        # --- 全局存檔槽位選擇遮罩 ---
+        slot_rects = {}
+        if getattr(game, "show_slot_select", False):
+            slot_rects = draw_slot_select_overlay(main_surface, game, mx, my)
+
         if use_shake:
             screen.fill((30, 30, 40))
             screen.blit(game_surface, (int(shake_x), int(shake_y)))
@@ -332,37 +338,38 @@ def main():
 
             if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1: 
-                    if game.state == "MAIN_MENU":
+                    # 在任何狀態下，存檔槽位選擇遮罩打開時優先處理
+                    if getattr(game, "show_slot_select", False):
+                        if slot_rects.get("BACK") and slot_rects["BACK"].collidepoint((mx, my)):
+                            game.show_slot_select = False
+                        else:
+                            for slot, rect in slot_rects.items():
+                                if isinstance(slot, int) and rect.collidepoint((mx, my)):
+                                    game.current_save_slot = slot
+                                    action = getattr(game, "slot_select_action", "LOAD")
+                                    if action == "LOAD":
+                                        if load_game(game, slot):
+                                            game.state = "BATTLE"
+                                            game.previous_battle_state = None
+                                    elif action == "SAVE":
+                                        save_game(game, slot)
+                                        game.state = "MAIN_MENU"
+                                        game.previous_battle_state = None
+                                        game.show_deck = False
+                                    game.show_slot_select = False
+                                    break
+                    elif game.state == "MAIN_MENU":
                         if game.show_mechanics_guide:
                             guide_close_rect = draw_mechanics_guide_overlay(main_surface, game, mx, my)
                             if guide_close_rect.collidepoint((mx, my)):
                                 game.show_mechanics_guide = False
                                 game.mechanics_scroll = 0
-                        elif getattr(game, "show_slot_select", False):
-                            if slot_rects.get("BACK") and slot_rects["BACK"].collidepoint((mx, my)):
-                                game.show_slot_select = False
-                            else:
-                                for slot, rect in slot_rects.items():
-                                    if isinstance(slot, int) and rect.collidepoint((mx, my)):
-                                        game.current_save_slot = slot
-                                        if getattr(game, "slot_select_for_continue", False):
-                                            if load_game(game, slot):
-                                                game.state = "BATTLE"
-                                                game.previous_battle_state = None
-                                        else:
-                                            # New game: delete save then proceed
-                                            from .save import delete_savegame
-                                            delete_savegame(slot)
-                                            game.reset_game()
-                                            game.state = "MODE_SELECT"
-                                        game.show_slot_select = False
-                                        break
                         elif menu_rects.get("CONTINUE") and menu_rects["CONTINUE"].collidepoint((mx, my)):
                             game.show_slot_select = True
-                            game.slot_select_for_continue = True
+                            game.slot_select_action = "LOAD"
                         elif menu_rects.get("START") and menu_rects["START"].collidepoint((mx, my)):
-                            game.show_slot_select = True
-                            game.slot_select_for_continue = False
+                            game.reset_game()
+                            game.state = "MODE_SELECT"
                         elif menu_rects.get("SETTINGS") and menu_rects["SETTINGS"].collidepoint((mx, my)):
                             game.state = "SETTINGS"
                         elif menu_rects.get("QUIT") and menu_rects["QUIT"].collidepoint((mx, my)):
@@ -380,11 +387,9 @@ def main():
                             else:
                                 game.state = "MAIN_MENU"
                         elif setting_rects.get("SAVE") and setting_rects["SAVE"][0].collidepoint((mx, my)):
-                            # 保存並退出：存檔後返回主選單
-                            save_game(game)
-                            game.state = "MAIN_MENU"
-                            game.previous_battle_state = None
-                            game.show_deck = False
+                            # 保存並退出：先選槽位，存檔後返回主選單
+                            game.show_slot_select = True
+                            game.slot_select_action = "SAVE"
                         elif setting_rects.get("QUIT_BATTLE") and setting_rects["QUIT_BATTLE"][0].collidepoint((mx, my)):
                             # 退出對局：清除當前槽位存檔並返回主選單，保留設置
                             delete_savegame(game.current_save_slot)

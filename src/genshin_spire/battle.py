@@ -54,7 +54,7 @@ class BattleManager:
         self.unlocked_achievements = set()
         self.current_save_slot = 1
         self.show_slot_select = False
-        self.slot_select_for_continue = False
+        self.slot_select_action = "LOAD"
 
         self.enemy_max_hp = 80
         self.enemy_hp = 80
@@ -318,7 +318,7 @@ class BattleManager:
         self.unlocked_achievements = set()
         self.current_save_slot = 1
         self.show_slot_select = False
-        self.slot_select_for_continue = False
+        self.slot_select_action = "LOAD"
         self.state = "MAIN_MENU"
 
         self.volume = vol
