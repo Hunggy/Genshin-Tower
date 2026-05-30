@@ -22,8 +22,10 @@ def draw_main_menu_surface(surface, game, mx, my):
         mode_name = MODE_DISPLAY_NAMES.get(saved_mode, saved_mode)
         buttons.insert(0, {"id": "CONTINUE", "text": f"繼續{mode_name}"})
     menu_rects = {}
+    btn_start_y = h * 0.40
+    btn_gap = 70 if len(buttons) >= 4 else 80
     for i, btn in enumerate(buttons):
-        rect = pygame.Rect(w // 2 - 150, h * 0.45 + i * 80, 300, 50)
+        rect = pygame.Rect(w // 2 - 150, btn_start_y + i * btn_gap, 300, 50)
         menu_rects[btn["id"]] = rect
         is_hover = rect.collidepoint((mx, my))
         color = (100, 100, 150) if is_hover else (60, 60, 80)
@@ -54,7 +56,7 @@ def draw_main_menu_surface(surface, game, mx, my):
     menu_rects["GUIDE"] = guide_btn_rect
 
     # 統計數據小面板
-    stats_y = int(h * 0.82)
+    stats_y = int(h * 0.86)
     stats_bg = pygame.Surface((320, 90), pygame.SRCALPHA)
     stats_bg.fill((30, 30, 45, 180))
     surface.blit(stats_bg, (w // 2 - 160, stats_y))
