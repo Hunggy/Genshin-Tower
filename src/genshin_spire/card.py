@@ -2,7 +2,7 @@ import pygame
 import math
 import random
 
-from .config import ELEMENT_COLORS, WHITE, GOLD, SCREEN_W, SCREEN_H
+from .config import ELEMENT_COLORS, WHITE, GOLD, RED, SCREEN_W, SCREEN_H
 from .resources import get_ui_font, font_main, font_hp, font_desc, element_icons
 
 
