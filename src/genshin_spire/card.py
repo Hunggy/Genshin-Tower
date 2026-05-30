@@ -81,18 +81,23 @@ class Card:
         temp_rect = pygame.Rect(0, 0, base_w, base_h)
 
         # 稀有度/類型邊框顏色
-        type_border_colors = {
-            "ATTACK": (180, 80, 80),
-            "SKILL": (80, 80, 180),
-            "POWER": (140, 80, 180),
-        }
-        type_bg_colors = {
-            "ATTACK": (90, 50, 50),
-            "SKILL": (50, 50, 90),
-            "POWER": (80, 50, 90),
-        }
-        type_main = type_border_colors.get(self.type, (70, 70, 100))
-        type_bg = type_bg_colors.get(self.type, (40, 40, 60))
+        # SKILL 中帶 block 為防御型(藍)，無 block 為功能型(青)
+        if self.type == "SKILL":
+            if self.block > 0:
+                type_main = (80, 80, 180)       # 防御藍
+                type_bg   = (50, 50, 90)
+            else:
+                type_main = (80, 160, 160)       # 功能青
+                type_bg   = (40, 70, 70)
+        elif self.type == "ATTACK":
+            type_main = (180, 80, 80)
+            type_bg   = (90, 50, 50)
+        elif self.type == "POWER":
+            type_main = (140, 80, 180)
+            type_bg   = (80, 50, 90)
+        else:
+            type_main = (70, 70, 100)
+            type_bg   = (40, 40, 60)
 
         # 2. 處理外框與背景
         if is_selected:
