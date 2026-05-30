@@ -207,6 +207,24 @@ def draw_ui_surface(surface, game, mx, my):
         maya_ts = font_desc.render("[淨善攝位激活]", True, (100, 255, 100))
         surface.blit(maya_ts, (100 * ui_scale, h - 165 * ui_scale))
 
+    # --- 戰鬥日誌面板 ---
+    if game.show_battle_log and game.battle_log:
+        log_w = int(260 * ui_scale)
+        log_h = int(140 * ui_scale)
+        log_x = int(20 * ui_scale)
+        log_y = int(h * 0.42)
+        log_bg = pygame.Surface((log_w, log_h), pygame.SRCALPHA)
+        log_bg.fill((20, 20, 30, 180))
+        surface.blit(log_bg, (log_x, log_y))
+        pygame.draw.rect(surface, (80, 80, 100), (log_x, log_y, log_w, log_h), width=1, border_radius=4)
+        log_title = font_desc.render("戰鬥日誌", True, GOLD)
+        surface.blit(log_title, (log_x + 6, log_y + 4))
+        line_y = log_y + 22
+        for entry in game.battle_log[-6:]:
+            line_s = font_desc.render(entry, True, (200, 200, 200))
+            surface.blit(line_s, (log_x + 6, line_y))
+            line_y += 16
+
     num_cards = len(game.hand)
     draw_queue = []
     hovered_card = None

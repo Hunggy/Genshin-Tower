@@ -53,4 +53,18 @@ def draw_main_menu_surface(surface, game, mx, my):
     surface.blit(guide_ts, guide_ts.get_rect(center=guide_btn_rect.center))
     menu_rects["GUIDE"] = guide_btn_rect
 
+    # 統計數據小面板
+    stats_y = int(h * 0.82)
+    stats_bg = pygame.Surface((320, 90), pygame.SRCALPHA)
+    stats_bg.fill((30, 30, 45, 180))
+    surface.blit(stats_bg, (w // 2 - 160, stats_y))
+    stats_lines = [
+        f"最高波次: {game.stats_highest_wave}  |  總擊殺: {game.stats_total_kills}",
+        f"總傷害: {game.stats_total_damage_dealt}  |  總受傷: {game.stats_total_damage_taken}",
+        f"出牌數: {game.stats_total_cards_played}  |  回合數: {game.stats_total_turns}",
+    ]
+    for i, line in enumerate(stats_lines):
+        line_ts = font_main.render(line, True, (180, 180, 180))
+        surface.blit(line_ts, line_ts.get_rect(center=(w // 2, stats_y + 18 + i * 22)))
+
     return menu_rects

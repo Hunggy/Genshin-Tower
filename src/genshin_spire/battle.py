@@ -37,7 +37,22 @@ class BattleManager:
         self.base_energy = 3
         self.energy = 3
 
-        # 敵人基礎數值
+        # 戰鬥日誌
+        self.battle_log = []
+        self.show_battle_log = True  # 預設顯示
+
+        # 統計數據
+        self.stats_total_cards_played = 0
+        self.stats_total_damage_dealt = 0
+        self.stats_total_damage_taken = 0
+        self.stats_highest_wave = 1
+        self.stats_total_kills = 0
+        self.stats_total_turns = 0
+        self.stats_total_reactions = 0
+
+        # 成就系統
+        self.unlocked_achievements = set()
+
         self.enemy_max_hp = 80
         self.enemy_hp = 80
         self.enemy_min_dmg = 7
@@ -181,6 +196,32 @@ class BattleManager:
         self.pyro_damage_bonus = 0
         self.anim_queue = []
 
+    def _log(self, msg):
+        """追加戰鬥日誌，保留最近 50 條"""
+        self.battle_log.append(msg)
+        if len(self.battle_log) > 50:
+            self.battle_log.pop(0)
+
+    def check_achievements(self):
+        """檢查並觸發成就"""
+        ACHIEVEMENTS = {
+            "first_blood":    ("初露鋒芒", lambda g: g.stats_total_kills >= 1),
+            "wave_5":         ("五層突破", lambda g: g.current_wave >= 5),
+            "wave_10":        ("十層突破", lambda g: g.current_wave >= 10),
+            "wave_20":        ("二十層突進", lambda g: g.current_wave >= 20),
+            "wave_30":        ("登頂", lambda g: g.current_wave >= 30),
+            "no_damage":      ("無傷", lambda g: g.player_hp == g.player_max_hp and g.current_wave >= 5),
+            "endless_1":      ("無盡探索者", lambda g: g.is_endless and g.endless_loop_count >= 1),
+            "reactions_10":   ("元素新手", lambda g: g.stats_total_reactions >= 10),
+            "reactions_50":   ("元素大師", lambda g: g.stats_total_reactions >= 50),
+            "cards_100":      ("卡牌收藏家", lambda g: g.stats_total_cards_played >= 100),
+            "damage_500":     ("重砲手", lambda g: g.stats_total_damage_dealt >= 500),
+        }
+        for key, (name, cond) in ACHIEVEMENTS.items():
+            if key not in self.unlocked_achievements and cond(self):
+                self.unlocked_achievements.add(key)
+                self.anim_queue.append(("status_enemy", f"成就解鎖：{name}!", 640, 200))
+
     def reset_game(self):
         """完全重置遊戲到初始狀態"""
         vol = getattr(self, 'volume', 0.5)
@@ -262,6 +303,15 @@ class BattleManager:
 
         self.pending_relic = None
         self.pending_upgrade = False
+        self.battle_log = []
+        self.show_battle_log = True
+        self.stats_total_cards_played = 0
+        self.stats_total_damage_dealt = 0
+        self.stats_total_damage_taken = 0
+        self.stats_highest_wave = 1
+        self.stats_total_kills = 0
+        self.stats_total_turns = 0
+        self.stats_total_reactions = 0
         self.state = "MAIN_MENU"
 
         self.volume = vol
@@ -531,6 +581,7 @@ class BattleManager:
 
     def _add_reaction(self, msg, y=0.28):
         self.reactions_this_turn += 1
+        self.stats_total_reactions += 1
         self.anim_queue.append(("status_enemy", msg, SCREEN_W - 400, SCREEN_H * y))
 
     def reaction_electrocharged(self):
@@ -577,6 +628,8 @@ class BattleManager:
     def play_card(self, card, start_x, start_y):
         if self.energy >= card.cost:
             self.cards_played_this_turn += 1 # 增加連擊計數
+            self.stats_total_cards_played += 1
+            self._log(f"打出 {card.name}")
 
             # 1. 記錄打出牌前的波次與無盡輪次
             prev_wave = self.current_wave
@@ -925,6 +978,8 @@ class BattleManager:
             dmg = int(dmg * 1.5)
 
         self.enemy_hp -= dmg
+        self.stats_total_damage_dealt += dmg
+        self._log(f"對 {self.enemy_name} 造成 {dmg} 點傷害")
         tx = SCREEN_W - 400
         ty = SCREEN_H * 0.4
         self.anim_queue.append(("card_fly", card, sx, sy, tx, ty))
@@ -1011,6 +1066,7 @@ class BattleManager:
         self.state = "REWARD"
         self.selected_reward = None
         self.pending_relic = None
+        self.stats_total_kills += 1
 
         if self.stage_type in ["ELITE", "BOSS", "FINAL_BOSS"]:
             self.pending_upgrade = True
@@ -1075,6 +1131,7 @@ class BattleManager:
 
     def start_next_wave(self):
         w = self.current_wave
+        self.stats_highest_wave = max(self.stats_highest_wave, w)
 
         # 檢查並清除過期的功能牌（每5波一組）
         current_group = (w - 1) // 5 + 1
@@ -1241,6 +1298,8 @@ class BattleManager:
 
     def end_turn(self):
         """處理玩家結束回合的邏輯"""
+        self.stats_total_turns += 1
+        self.check_achievements()
         for card in self.modified_cards:
             card.cost = card.original_cost
         self.modified_cards.clear()
@@ -1319,6 +1378,7 @@ class BattleManager:
 
         if enemy_can_act:
             damage = self.enemy_intent
+            self._log(f"敵人 {self.enemy_name} 意圖 {damage} 點攻擊")
 
             # --- 交互：連擊壓制 (本回合打出牌 >= 5) ---
             if self.cards_played_this_turn >= 5:
@@ -1376,6 +1436,8 @@ class BattleManager:
 
             actual_dmg = max(0, damage - self.player_block)
             self.player_hp -= actual_dmg
+            self.stats_total_damage_taken += actual_dmg
+            self._log(f"受到 {actual_dmg} 點傷害 (格擋 {self.player_block})")
             if actual_dmg > 0:
                 self.anim_queue.append(("damage_player", actual_dmg, 200, SCREEN_H - 350))
                 # 只有未升级的虚空血脉才在受伤时获得力量
@@ -1384,6 +1446,7 @@ class BattleManager:
                     self.anim_queue.append(("status_enemy", "力量提升!", 250, SCREEN_H - 350))
         else:
             if status_msg:
+                self._log(status_msg)
                 self.anim_queue.append(("status_enemy", status_msg, SCREEN_W - 400, SCREEN_H * 0.3))
 
         if self.player_hp <= 0:
@@ -1612,6 +1675,16 @@ class BattleManager:
                 "show_mechanics_guide": self.show_mechanics_guide,
                 "mechanics_scroll": self.mechanics_scroll,
             },
+            "stats": {
+                "total_cards_played": self.stats_total_cards_played,
+                "total_damage_dealt": self.stats_total_damage_dealt,
+                "total_damage_taken": self.stats_total_damage_taken,
+                "highest_wave": self.stats_highest_wave,
+                "total_kills": self.stats_total_kills,
+                "total_turns": self.stats_total_turns,
+                "total_reactions": self.stats_total_reactions,
+            },
+            "achievements": list(self.unlocked_achievements),
         }
 
     def load_from_dict(self, data):
@@ -1686,6 +1759,19 @@ class BattleManager:
         self.maya_turns = m.get("maya_turns", 0)
         self.grass_buff = m.get("grass_buff", False)
         self.pyro_damage_bonus = m.get("pyro_damage_bonus", 0)
+
+        # 統計
+        st = data.get("stats", {})
+        self.stats_total_cards_played = st.get("total_cards_played", 0)
+        self.stats_total_damage_dealt = st.get("total_damage_dealt", 0)
+        self.stats_total_damage_taken = st.get("total_damage_taken", 0)
+        self.stats_highest_wave = st.get("highest_wave", 1)
+        self.stats_total_kills = st.get("total_kills", 0)
+        self.stats_total_turns = st.get("total_turns", 0)
+        self.stats_total_reactions = st.get("total_reactions", 0)
+
+        # 成就
+        self.unlocked_achievements = set(data.get("achievements", []))
 
         # 牌堆
         self.deck = self._pile_from_dict(data.get("deck", []))

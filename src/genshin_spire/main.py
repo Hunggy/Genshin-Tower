@@ -270,6 +270,9 @@ def main():
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                # 自動存檔：若在戰鬥中，儲存後再退出
+                if game.state in ("BATTLE", "ENEMY_TURN"):
+                    save_game(game)
                 pygame.quit()
                 sys.exit()
 
@@ -289,6 +292,8 @@ def main():
                     game.show_mechanics_guide = not game.show_mechanics_guide
                     if not game.show_mechanics_guide:
                         game.mechanics_scroll = 0
+                elif event.key == pygame.K_l and game.state in ("BATTLE", "ENEMY_TURN"):
+                    game.show_battle_log = not game.show_battle_log
                 elif event.key in (pygame.K_TAB, pygame.K_SPACE) and game.state == "BATTLE" and not game.show_deck and not game.show_mechanics_guide:
                     game.end_turn()
                 elif event.key in (pygame.K_w, pygame.K_UP):
