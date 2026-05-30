@@ -1,7 +1,7 @@
 import pygame
 
 from ..config import GOLD, WHITE
-from ..resources import font_big, font_hp, font_desc
+from ..resources import font_big, font_hp, font_desc, font_main
 from ..save import MECHANICS_GUIDE_ENTRIES
 from .common import wrap_text_lines
 
