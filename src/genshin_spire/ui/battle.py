@@ -15,13 +15,63 @@ def draw_ui_surface(surface, game, mx, my):
     mode_ts = font_main.render(f"當前模式: {mode_text}", True, (180, 180, 180))
     surface.blit(mode_ts, (20, 20))
 
+    # 環境事件顯示
+    if game.current_env_event:
+        env_info = {"濃霧": (150, 150, 180), "地震": (180, 120, 80), "雷暴": (80, 100, 180), "寧靜": (100, 180, 100), "詛咒": (180, 80, 180)}
+        env_color = env_info.get(game.current_env_event, (180, 180, 180))
+        env_ts = font_main.render(f"環境: {game.current_env_event}", True, env_color)
+        surface.blit(env_ts, (20, 48))
+
     wave_str = f"波次: {game.current_wave} / {game.max_waves}"
     if game.is_endless:
         wave_str = f"無限模式 [第 {game.endless_loop_count} 輪] - {wave_str}"
     wave_ts = font_main.render(wave_str, True, GOLD)
-    surface.blit(wave_ts, (20, 50))
+    wave_y = 76 if game.current_env_event else 50
+    surface.blit(wave_ts, (20, wave_y))
 
-    if game.enemy_hp > 0:
+    # --- 多敵人顯示 ---
+    wave_enemies = getattr(game, "wave_enemies", [])
+    if len(wave_enemies) > 1:
+        num_enemies = len(wave_enemies)
+        spacing = min(180, (w - 500) // num_enemies)
+        start_x = w - 480 - (num_enemies - 1) * spacing // 2
+        for i, e_data in enumerate(wave_enemies):
+            if e_data["hp"] <= 0:
+                continue
+            ex = start_x + i * spacing
+            ey = h * 0.35
+            is_target = (i == getattr(game, "target_index", 0))
+
+            # 目標指示器
+            if is_target:
+                pygame.draw.rect(surface, (255, 255, 0), (ex - 5, ey - 5, 130, 135), 3, border_radius=8)
+
+            # 敵人圖片
+            e_img = e_data.get("image")
+            if e_img:
+                surface.blit(e_img, (ex + (120 - e_img.get_width()) // 2, ey + (120 - e_img.get_height()) // 2))
+            else:
+                pygame.draw.rect(surface, (150, 50, 50), pygame.Rect(ex, ey, 120, 120), border_radius=10)
+
+            # 名稱
+            e_name_ts = font_desc.render(e_data["name"], True, GOLD if is_target else WHITE)
+            surface.blit(e_name_ts, (ex, ey - 18))
+
+            # HP 條
+            draw_bar(surface, ex, ey + 125, e_data["hp"], e_data["max_hp"], 0, RED)
+
+            # 意圖
+            e_intent = e_data.get("intent", 0)
+            e_ratio = e_intent / max(1, game.player_max_hp)
+            e_color = GREEN if e_ratio <= 0.15 else ((255, 200, 0) if e_ratio <= 0.30 else RED)
+            e_intent_ts = font_desc.render(f"⚔{e_intent}", True, e_color)
+            surface.blit(e_intent_ts, (ex, ey + 140))
+
+        # 切換目標提示
+        hint_ts = font_main.render("[Q/E 切換目標]", True, (150, 150, 150))
+        surface.blit(hint_ts, (w - 480, h * 0.65))
+
+    elif game.enemy_hp > 0:
         enemy_rect = pygame.Rect(w - 430, h * 0.35, 120, 120)
         if game.enemy_image:
             img_x = w - 430 + (120 - game.enemy_image.get_width()) // 2
@@ -36,13 +86,23 @@ def draw_ui_surface(surface, game, mx, my):
         type_color = GOLD if game.stage_type in ["BOSS", "FINAL_BOSS"] else (ORANGE if game.stage_type == "ELITE" else WHITE)
         name_ts = font_hp.render(game.enemy_name, True, type_color)
         surface.blit(name_ts, (w - 480, h * 0.18))
+
+        # 詞條顯示
+        affix_y = h * 0.215
         if game.enemy_stance_enabled:
             buff_ts = font_desc.render("[特殊·節奏大師]", True, GOLD)
             surface.blit(buff_ts, (w - 480, h * 0.205))
-        
+            affix_y = h * 0.235
+        for affix_key in getattr(game, "enemy_affixes", []):
+            from ..battle import AFFIXES
+            affix_info = AFFIXES.get(affix_key, {})
+            affix_ts = font_desc.render(f"[{affix_info.get('name', affix_key)}]", True, affix_info.get("color", (180, 180, 180)))
+            surface.blit(affix_ts, (w - 480, affix_y))
+            affix_y += 18
+
         hp_y = h * 0.28
-        if game.enemy_stance_enabled:
-            hp_y = h * 0.34
+        if game.enemy_stance_enabled or getattr(game, "enemy_affixes", []):
+            hp_y = max(hp_y, affix_y + 8)
         draw_bar(surface, w - 480, hp_y, game.enemy_hp, game.enemy_max_hp, 0, RED)
         
         # 敵人意圖顏色編碼：低傷=綠，中傷=黃，高傷=紅

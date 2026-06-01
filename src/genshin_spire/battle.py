@@ -16,6 +16,38 @@ from .animation import AnimationManager, FloatText, FlashScreen, ShakeScreen
 from .audio import play_bgm
 
 
+# --- 精英敵人詞條 ---
+AFFIXES = {
+    "Regenerating": {"name": "再生", "color": (50, 200, 100), "desc": "每回合回復 5 HP"},
+    "Spiky": {"name": "荊棘", "color": (255, 100, 100), "desc": "反傷 +3"},
+    "Evasive": {"name": "迴避", "color": (100, 200, 255), "desc": "15% 概率免疫傷害"},
+    "Armored": {"name": "重甲", "color": (180, 180, 180), "desc": "初始護盾 +3"},
+    "Enraged": {"name": "狂暴", "color": (255, 80, 50), "desc": "HP<50% 傷害 +50%"},
+}
+
+# --- 環境事件 ---
+ENV_EVENTS = {
+    "濃霧": {"desc": "玩家傷害 -15%", "effect": "player_damage_down"},
+    "地震": {"desc": "每回合雙方受到 3 點傷害", "effect": "both_dot"},
+    "雷暴": {"desc": "敵人意圖 +20% 但 15% 打空", "effect": "storm"},
+    "寧靜": {"desc": "能量上限 +1", "effect": "energy_up"},
+    "詛咒": {"desc": "每回合抽牌 -1", "effect": "draw_down"},
+}
+
+BLESSINGS = [
+    {"id": "bless_hp", "name": "生命祝福", "desc": "初始生命 +5", "cost": 10, "color": (100, 200, 100),
+     "apply": lambda g: setattr(g, 'player_max_hp', g.player_max_hp + 5)},
+    {"id": "bless_energy", "name": "能量祝福", "desc": "初始能量 +1", "cost": 15, "color": (100, 150, 255),
+     "apply": lambda g: setattr(g, 'base_energy', g.base_energy + 1)},
+    {"id": "bless_strength", "name": "力量祝福", "desc": "初始力量 +1", "cost": 20, "color": (255, 100, 100),
+     "apply": lambda g: setattr(g, 'strength', g.strength + 1)},
+    {"id": "bless_gold", "name": "黃金祝福", "desc": "初始金幣 +30", "cost": 8, "color": (255, 215, 0),
+     "apply": lambda g: setattr(g, 'gold', g.gold + 30)},
+    {"id": "bless_card", "name": "卡牌祝福", "desc": "從 3 張卡中選 1 張加入初始牌組", "cost": 12, "color": (200, 100, 255),
+     "apply": None},  # 需要特殊處理
+]
+
+
 class BattleManager:
     def __init__(self):
         # 基礎狀態
@@ -55,6 +87,13 @@ class BattleManager:
         self.current_save_slot = 1
         self.show_slot_select = False
         self.slot_select_action = "LOAD"
+
+        # 局外成長與難度
+        self.difficulty_tier = 0       # 通關後+1的難度階層
+        self.max_difficulty_tier = 5   # 最高難度階層
+        self.primogem = 0             # 局外貨幣：原石
+        self.gold = 0                 # 局內貨幣：金幣
+        self.current_env_event = None  # 當前環境事件
 
         self.enemy_max_hp = 80
         self.enemy_hp = 80
@@ -129,6 +168,9 @@ class BattleManager:
         self.control_count_this_turn = 0
         self.enemy_stance = "ATTACK"
         self.enemy_stance_enabled = False  # 僅部分精英/BOSS 擁有節奏姿態
+        self.boss_phase_2 = False  # BOSS 第二階段 (HP < 50%)
+        self.wave_enemies = []   # 多敵人波次: [{"name", "hp", "max_hp", "min_dmg", "max_dmg", "image"}]
+        self.target_index = 0    # 當前攻擊目標索引
 
         # 玩家狀態
         self.maya_active = False
@@ -148,6 +190,16 @@ class BattleManager:
         self.current_character = list(character_images.keys())[0] if character_images else "Default"
         self.selection_mode = None
         self.selection_source_card = None
+
+        # 商店系統
+        self.shop_cards = []          # 商店出售的卡牌 [{"card", "price"}]
+        self.shop_remove_price = 50   # 移除卡牌價格
+        self.shop_heal_price = 30     # 回復 30% 生命值價格
+        self.shop_mode = None         # None, "BUY_CARD", "REMOVE_CARD"
+
+        # 結算系統
+        self.run_primogems_earned = 0  # 本局獲得的原石
+        self.pending_blessings = []   # 結算後待選祝福
 
         # 執行一次重置確保所有狀態正確
         self.reset_game()
@@ -276,6 +328,9 @@ class BattleManager:
         self.bloom_generated_this_turn = 0
         self.enemy_stance = "ATTACK"
         self.enemy_stance_enabled = False
+        self.boss_phase_2 = False
+        self.wave_enemies = []
+        self.target_index = 0
 
         self.turn_count = 0
         self.max_hand = 10  # 增加手牌上限到 10，防止靈光一閃或技能抽牌被丟棄
@@ -321,6 +376,9 @@ class BattleManager:
         self.current_save_slot = 1
         self.show_slot_select = False
         self.slot_select_action = "LOAD"
+        self.primogem = 0
+        self.gold = 0
+        self.current_env_event = None
         self.state = "MAIN_MENU"
 
         self.volume = vol
@@ -390,6 +448,9 @@ class BattleManager:
         random.shuffle(self.deck)
         self.turn_count = 1
         self.enemy_stance_enabled = False
+        self.boss_phase_2 = False
+        self.wave_enemies = []
+        self.target_index = 0
         self.roll_enemy_intent()
         self.cards_played_this_turn = 0
         self.reactions_this_turn = 0
@@ -521,6 +582,13 @@ class BattleManager:
         self.enemy_intent = random.randint(self.enemy_min_dmg, self.enemy_max_dmg)
         if self.enemy_stance_enabled and self.enemy_stance == "ATTACK":
             self.enemy_intent = int(self.enemy_intent * 1.5)
+        # --- BOSS 第二階段：意圖 +50% ---
+        if self.boss_phase_2 and self.stage_type in ("BOSS", "FINAL_BOSS"):
+            self.enemy_intent = int(self.enemy_intent * 1.5)
+        # --- 多敵人: 為每個存活敵人生成獨立意圖 ---
+        for e in self.wave_enemies:
+            if e["hp"] > 0:
+                e["intent"] = random.randint(e["min_dmg"], e["max_dmg"])
 
     def apply_stance_defend_heal(self):
         if not self.enemy_stance_enabled:
@@ -543,11 +611,11 @@ class BattleManager:
         if amount <= 0 or self.enemy_hp <= 0:
             return
         self.enemy_hp = max(0, self.enemy_hp - amount)
+        self.stats_total_damage_dealt += amount
         self.anim_queue.append(("true_damage", amount, SCREEN_W - 400, SCREEN_H * 0.4))
-        if self.enemy_hp <= 0:
-            self.enemy_hp = 0
-            self.anim_queue.append(("enemy_death",))
-            self.generate_rewards()
+        if self.wave_enemies and 0 <= self.target_index < len(self.wave_enemies):
+            self.wave_enemies[self.target_index]["hp"] = self.enemy_hp
+        self.check_enemy_death()
 
     def trigger_target_mark(self, card):
         if not getattr(card, "is_marked", False):
@@ -619,6 +687,9 @@ class BattleManager:
         return True
 
     def draw_cards(self, num):
+        # --- 環境事件: 詛咒 (抽牌 -1, 最少 1) ---
+        if self.current_env_event == "詛咒":
+            num = max(1, num - 1)
         for _ in range(num):
             if len(self.hand) >= self.max_hand:
                 break
@@ -703,6 +774,9 @@ class BattleManager:
                         # =================================
                 for i in range(times):
                     hit_dmg = dmg_per_hit
+                    # --- 環境事件: 濃霧 (玩家傷害 -15%) ---
+                    if self.current_env_event == "濃霧":
+                        hit_dmg = int(hit_dmg * 0.85)
                     self.enemy_hp -= hit_dmg
                     offset_y = i * 25
                     self.anim_queue.append(("damage_enemy", hit_dmg, SCREEN_W - 400, SCREEN_H * 0.35 + offset_y))
@@ -898,10 +972,7 @@ class BattleManager:
                             self.anim_queue.append(("status_enemy", "控制無效！", SCREEN_W - 400, SCREEN_H * 0.25))
                     else:
                         self.anim_queue.append(("status_enemy", "控制上限！", SCREEN_W - 400, SCREEN_H * 0.25))
-                    if self.enemy_hp <= 0:
-                        self.enemy_hp = 0
-                        self.anim_queue.append(("enemy_death",))
-                        self.generate_rewards()
+                    self.check_enemy_death()
                     return True
                 elif card_name == "荒星防护":
                     self.reaction_crystallize(8)
@@ -924,10 +995,7 @@ class BattleManager:
                             self.anim_queue.append(("status_enemy", "控制無效！", SCREEN_W - 400, SCREEN_H * 0.25))
                     else:
                         self.anim_queue.append(("status_enemy", "控制上限！", SCREEN_W - 400, SCREEN_H * 0.25))
-                    if self.enemy_hp <= 0:
-                        self.enemy_hp = 0
-                        self.anim_queue.append(("enemy_death",))
-                        self.generate_rewards()
+                    self.check_enemy_death()
                     return True
                 elif card_name == "雨神之护":
                     self.enemy_wet = True
@@ -947,10 +1015,7 @@ class BattleManager:
                     self.hand.remove(card)
                 self._dispose_played_card(card)
 
-            if self.enemy_hp <= 0:
-                self.enemy_hp = 0
-                self.anim_queue.append(("enemy_death",))
-                self.generate_rewards()
+            self.check_enemy_death()
             return True
         return False
 
@@ -983,6 +1048,15 @@ class BattleManager:
             self.anim_queue.append(("card_fly", card, sx, sy, tx, ty))
             return
 
+        # --- 詞條: 迴避 (Evasive) ---
+        if "Evasive" in getattr(self, "enemy_affixes", []) and random.random() < 0.15:
+            self.anim_queue.append(("status_enemy", "迴避！攻擊失效", SCREEN_W - 400, SCREEN_H * 0.3))
+            return
+
+        # --- 環境事件: 濃霧 (玩家傷害 -15%) ---
+        if self.current_env_event == "濃霧" and card and card.type == "ATTACK":
+            dmg = int(dmg * 0.85)
+
         # 易傷增幅：受到傷害增加 50%
         if self.enemy_vulnerable_turns > 0:
             dmg = int(dmg * 1.5)
@@ -990,6 +1064,19 @@ class BattleManager:
         self.enemy_hp -= dmg
         self.stats_total_damage_dealt += dmg
         self._log(f"對 {self.enemy_name} 造成 {dmg} 點傷害")
+
+        # --- 多敵人: 同步 HP 回 wave_enemies ---
+        if self.wave_enemies and 0 <= self.target_index < len(self.wave_enemies):
+            self.wave_enemies[self.target_index]["hp"] = self.enemy_hp
+
+        # --- BOSS 第二階段觸發 (HP < 50%) ---
+        if (not self.boss_phase_2 and self.stage_type in ("BOSS", "FINAL_BOSS")
+                and 0 < self.enemy_hp <= self.enemy_max_hp * 0.5):
+            self.boss_phase_2 = True
+            self.enemy_intent = int(self.enemy_intent * 1.5)
+            self.anim_queue.append(("status_enemy", "BOSS 進入狂暴階段！傷害大幅提升！", SCREEN_W - 400, SCREEN_H * 0.15))
+            self._log(f"{self.enemy_name} 進入第二階段！攻擊力大幅提升！")
+
         tx = SCREEN_W - 400
         ty = SCREEN_H * 0.4
         self.anim_queue.append(("card_fly", card, sx, sy, tx, ty))
@@ -1008,8 +1095,7 @@ class BattleManager:
             # 立即檢查玩家是否死亡
             if self.player_hp <= 0:
                 self.player_hp = 0
-                # === 修正錯字： GAME_OVER 改為 GAMEOVER ===
-                self.state = "GAMEOVER"
+                self.settle_run()
                 self.anim_queue.append(("player_death",))
 
         # 草原催化者/净善摄位：生成草原核（每 3 個草原核計 1 次反應）
@@ -1082,6 +1168,18 @@ class BattleManager:
         self.pending_relic = None
         self.stats_total_kills += 1
 
+        # --- 金幣獎勵 ---
+        gold_reward = 10
+        if self.stage_type == "ELITE":
+            gold_reward = 20
+        elif self.stage_type == "BOSS":
+            gold_reward = 50
+        elif self.stage_type == "FINAL_BOSS":
+            gold_reward = 80
+        self.gold += gold_reward
+        self._log(f"獲得 {gold_reward} 金幣！")
+        self.anim_queue.append(("status_enemy", f"+{gold_reward} 金幣", 250, SCREEN_H - 350))
+
         if self.stage_type in ["ELITE", "BOSS", "FINAL_BOSS"]:
             self.pending_upgrade = True
 
@@ -1137,11 +1235,104 @@ class BattleManager:
             self.state = "UPGRADE_CARD"
             return
 
+        # 每 5 波後進入商店
+        if self.current_wave % 5 == 0:
+            self.generate_shop()
+            self.state = "SHOP"
+            return
+
         self.current_wave += 1
         if self.current_wave > self.max_waves:
             self.state = "VICTORY"
         else:
             self.start_next_wave()
+
+    def generate_shop(self):
+        """生成商店: 隨機選 3 張卡牌出售"""
+        self.shop_cards = []
+        self.shop_mode = None
+        available = [c for c in CARD_DATABASE.values() if c.type in ("ATTACK", "SKILL")]
+        chosen = random.sample(available, min(3, len(available)))
+        for c in chosen:
+            price = 15 + random.randint(0, 10)
+            if c.type == "ATTACK":
+                price += c.damage
+            else:
+                price += c.block
+            self.shop_cards.append({"card": copy.deepcopy(c), "price": price})
+        self.shop_remove_price = 50
+        self.shop_heal_price = 30
+
+    def shop_buy_card(self, index):
+        """購買商店卡牌"""
+        if index >= len(self.shop_cards):
+            return False
+        item = self.shop_cards[index]
+        if self.gold < item["price"]:
+            return False
+        self.gold -= item["price"]
+        self.deck.append(item["card"])
+        self._register_owned_card(item["card"])
+        self.shop_cards.pop(index)
+        self._log(f"購買了 {item['card'].name}！花費 {item['price']} 金幣")
+        return True
+
+    def shop_remove_card(self):
+        """花費金幣移除牌組中的一張卡牌"""
+        if self.gold < self.shop_remove_price:
+            return False
+        if len(self.deck) <= 5:
+            return False
+        self.gold -= self.shop_remove_price
+        self.shop_mode = "REMOVE_CARD"
+        return True
+
+    def shop_remove_confirm(self, card):
+        """確認移除卡牌"""
+        if card in self.deck:
+            self.deck.remove(card)
+            self._log(f"移除了 {card.name}！花費 {self.shop_remove_price} 金幣")
+            self.shop_mode = None
+            return True
+        return False
+
+    def shop_heal(self):
+        """花費金幣回復 30% 生命值"""
+        if self.gold < self.shop_heal_price:
+            return False
+        heal_amount = int(self.player_max_hp * 0.3)
+        if self.player_hp >= self.player_max_hp:
+            return False
+        self.gold -= self.shop_heal_price
+        self.player_hp = min(self.player_max_hp, self.player_hp + heal_amount)
+        self._log(f"回復了 {heal_amount} 生命值！花費 {self.shop_heal_price} 金幣")
+        return True
+
+    def shop_leave(self):
+        """離開商店，進入下一波"""
+        self.shop_mode = None
+        self.current_wave += 1
+        if self.current_wave > self.max_waves:
+            self.settle_run()
+        else:
+            self.start_next_wave()
+
+    def settle_run(self):
+        """結算本局，計算並發放原石"""
+        waves = self.stats_highest_wave
+        kills = self.stats_total_kills
+        reactions = self.stats_total_reactions
+        primogems = waves * 2 + kills * 5 + reactions * 3
+        self.run_primogems_earned = primogems
+        self.primogem += primogems
+
+        # --- 難度階層解鎖: 通關後提升 ---
+        if self.current_wave > self.max_waves and self.difficulty_tier < self.max_difficulty_tier:
+            self.difficulty_tier += 1
+            self._log(f"難度階層提升至 {self.difficulty_tier}！")
+
+        self.state = "SETTLEMENT"
+        self._log(f"結算: {primogems} 原石 (波{waves}×2 + 殺{kills}×5 + 反{reactions}×3)")
 
     def start_next_wave(self):
         w = self.current_wave
@@ -1233,6 +1424,34 @@ class BattleManager:
 
         self.configure_stance_buff(w)
 
+        # --- 難度階層: 詞條數量 ---
+        self.enemy_affixes = []
+        num_affixes = 0
+        if self.difficulty_tier >= 3:
+            num_affixes = 2
+        elif self.difficulty_tier >= 1:
+            num_affixes = 1
+        if self.stage_type in ("ELITE", "BOSS", "FINAL_BOSS") and num_affixes > 0:
+            available = list(AFFIXES.keys())
+            self.enemy_affixes = random.sample(available, min(num_affixes, len(available)))
+            # 應用詞條的初始效果
+            if "Armored" in self.enemy_affixes and self.enemy_hit_shield == 0:
+                self.enemy_hit_shield = 3
+                self.enemy_shield_element = "None"
+            if "Spiky" in self.enemy_affixes and self.enemy_thorns == 0:
+                self.enemy_thorns += 2
+            self.anim_queue.append(("status_enemy",
+                f"敵人詞條: {' / '.join([AFFIXES[a]['name'] for a in self.enemy_affixes])}",
+                SCREEN_W - 400, SCREEN_H * 0.15))
+
+        # --- 環境事件 (每 5 波) ---
+        if w % 5 == 1:
+            self.current_env_event = random.choice(list(ENV_EVENTS.keys()))
+            self.anim_queue.append(("status_enemy", f"環境: {self.current_env_event}", 640, 80))
+        if self.current_env_event == "寧靜" and self.base_energy < 4:
+            self.base_energy += 1
+            self.anim_queue.append(("status_enemy", "能量上限 +1!", 640, 120))
+
         # 确保所有类型的敌人都能加载图片
         self.enemy_image = load_enemy_image(self.enemy_name)
 
@@ -1264,6 +1483,13 @@ class BattleManager:
             base_hp = int(base_hp * 4.5)
             base_min_dmg = int(base_min_dmg * 2.0)
             base_max_dmg = int(base_max_dmg * 2.0)
+
+        # --- 難度階層加成 ---
+        if self.difficulty_tier > 0:
+            tier_factor = 1 + self.difficulty_tier * 0.15
+            base_hp = int(base_hp * tier_factor)
+            base_min_dmg = int(base_min_dmg * tier_factor)
+            base_max_dmg = int(base_max_dmg * tier_factor)
 
         self.enemy_max_hp = base_hp
 
@@ -1309,7 +1535,88 @@ class BattleManager:
         self.refresh_target_mark()
         self.reactions_this_turn = 0
         self.bloom_generated_this_turn = 0
+
+        # --- 多敵人波次: 正常波次生成 2-3 個敵人 ---
+        self.target_index = 0
+        self.boss_phase_2 = False
+        if self.stage_type == "NORMAL" and w >= 3:
+            num_enemies = 2 if w < 20 else 3
+            self.wave_enemies = []
+            for i in range(num_enemies):
+                e_hp = int(self.enemy_max_hp / num_enemies)
+                e_img = load_enemy_image(self.enemy_name)
+                self.wave_enemies.append({
+                    "name": self.enemy_name,
+                    "hp": e_hp,
+                    "max_hp": e_hp,
+                    "min_dmg": self.enemy_min_dmg,
+                    "max_dmg": self.enemy_max_dmg,
+                    "image": e_img,
+                })
+            # 同步主目標到 wave_enemies[0]
+            self.enemy_hp = self.wave_enemies[0]["hp"]
+            self.enemy_max_hp = self.wave_enemies[0]["max_hp"]
+        else:
+            e_img = load_enemy_image(self.enemy_name)
+            self.wave_enemies = [{
+                "name": self.enemy_name,
+                "hp": self.enemy_hp,
+                "max_hp": self.enemy_max_hp,
+                "min_dmg": self.enemy_min_dmg,
+                "max_dmg": self.enemy_max_dmg,
+                "image": e_img,
+            }]
+
         self.state = "BATTLE"
+
+    def switch_target(self, direction=1):
+        """在多敵人波次中切換攻擊目標"""
+        if len(self.wave_enemies) <= 1:
+            return
+        living = [(i, e) for i, e in enumerate(self.wave_enemies) if e["hp"] > 0]
+        if not living:
+            return
+        living_indices = [i for i, _ in living]
+        cur_pos = living_indices.index(self.target_index) if self.target_index in living_indices else 0
+        new_pos = (cur_pos + direction) % len(living_indices)
+        self.target_index = living_indices[new_pos]
+        self.sync_target_to_main()
+
+    def sync_target_to_main(self):
+        """將當前目標的數據同步到主 enemy_hp 等欄位，保持向後兼容"""
+        if 0 <= self.target_index < len(self.wave_enemies):
+            e = self.wave_enemies[self.target_index]
+            self.enemy_hp = e["hp"]
+            self.enemy_max_hp = e["max_hp"]
+            self.enemy_name = e["name"]
+            self.enemy_image = e["image"]
+
+    def get_living_enemies(self):
+        """返回所有存活的敵人列表 [(index, enemy_dict)]"""
+        return [(i, e) for i, e in enumerate(self.wave_enemies) if e["hp"] > 0]
+
+    def sync_all_enemies_from_main(self):
+        """將主 enemy_hp 寫回 wave_enemies[0] (在 apply_damage 後調用)"""
+        if self.wave_enemies:
+            self.wave_enemies[self.target_index]["hp"] = self.enemy_hp
+
+    def check_enemy_death(self):
+        """敵人死亡檢查：多敵人時自動切換目標，全部死亡才進入獎勵"""
+        if self.enemy_hp > 0:
+            return False
+        self.enemy_hp = 0
+        if self.wave_enemies:
+            self.wave_enemies[self.target_index]["hp"] = 0
+        self.anim_queue.append(("enemy_death",))
+        self.stats_total_kills += 1
+        living = self.get_living_enemies()
+        if living:
+            self.target_index = living[0][0]
+            self.sync_target_to_main()
+            self.anim_queue.append(("status_enemy", f"切換目標: {self.enemy_name}", SCREEN_W - 400, SCREEN_H * 0.15))
+            return False
+        self.generate_rewards()
+        return True
 
     def end_turn(self):
         """處理玩家結束回合的邏輯"""
@@ -1341,6 +1648,12 @@ class BattleManager:
 
     def process_enemy_turn(self):
         """原來的敵人回合邏輯，從 start_player_turn 之前的邏輯拆分出來"""
+        # --- 詞條: 再生 (Regenerating) ---
+        if "Regenerating" in getattr(self, "enemy_affixes", []) and self.enemy_hp > 0:
+            heal = 5
+            self.enemy_hp = min(self.enemy_max_hp, self.enemy_hp + heal)
+            self.anim_queue.append(("status_enemy", f"再生 +{heal} HP", SCREEN_W - 400, SCREEN_H * 0.15))
+
         # --- 處理回合開始能力效果 ---
         # --- 處理回合開始能力效果 ---
         if self._has_active_power("造物主工坊"):
@@ -1367,106 +1680,116 @@ class BattleManager:
             self.hand.append(temp_attack)
             self.anim_queue.append(("status_enemy", "工坊生成卡牌", 250, SCREEN_H - 350))
 
-        # --- 檢查敵人狀態 ---
-        enemy_can_act = True
-        status_msg = ""
+        # --- 處理所有存活敵人的行動 ---
+        living = self.get_living_enemies() if self.wave_enemies else [(0, {"intent": self.enemy_intent})]
 
+        # --- 減少控制狀態計數 (每回合一次) ---
         if self.enemy_stun_turns > 0:
             self.enemy_stun_turns -= 1
-            enemy_can_act = False
-            status_msg = "敵人暈眩！"
-        elif self.enemy_petrify_turns > 0:
+        if self.enemy_petrify_turns > 0:
             self.enemy_petrify_turns -= 1
-            enemy_can_act = False
-            status_msg = "敵人石化！"
-        elif self.enemy_frozen_turns > 0:
+        if self.enemy_frozen_turns > 0:
             self.enemy_frozen_turns -= 1
             if self.enemy_frozen_turns == 0:
                 self.enemy_frozen = False
-            enemy_can_act = False
-            status_msg = "敵人凍結！"
 
-        # --- 交互：若敵人無法行動且正在蓄力，大招計數器重置 ---
-        if not enemy_can_act and self.enemy_charge_turns > 0:
-            self.enemy_charge_turns = 1
-            self.anim_queue.append(("status_enemy", "蓄力被打斷！", SCREEN_W - 400, SCREEN_H * 0.25))
+        for idx, e_data in living:
+            self.target_index = idx
+            self.sync_target_to_main()
+            enemy_intent = e_data.get("intent", self.enemy_intent)
 
-        if enemy_can_act:
-            damage = self.enemy_intent
-            self._log(f"敵人 {self.enemy_name} 意圖 {damage} 點攻擊")
+            enemy_can_act = True
+            status_msg = ""
 
-            # --- 交互：連擊壓制 (本回合打出牌 >= 5) ---
-            if self.cards_played_this_turn >= 5:
-                damage = int(damage * 0.7) # 傷害降低 30%
-                self.anim_queue.append(("status_enemy", "連擊壓制：傷害降低！", SCREEN_W - 400, SCREEN_H * 0.2))
+            if self.enemy_stun_turns > 0:
+                enemy_can_act = False
+                status_msg = "敵人暈眩！"
+            elif self.enemy_petrify_turns > 0:
+                enemy_can_act = False
+                status_msg = "敵人石化！"
+            elif self.enemy_frozen_turns > 0:
+                enemy_can_act = False
+                status_msg = "敵人凍結！"
 
-            # --- 處理大招蓄力邏輯 ---
-            if self.enemy_charge_turns > 0:
-                if self.enemy_charge_turns >= self.enemy_charge_max:
-                    damage = int(damage * 3.5) # 大招 3.5 倍傷害
-                    self.anim_queue.append(("status_enemy", "【天罰】釋放！", SCREEN_W - 400, SCREEN_H * 0.25))
-                    self.enemy_charge_turns = 1
-                else:
-                    self.enemy_charge_turns += 1
-                    self.anim_queue.append(("status_enemy", f"蓄力中...({self.enemy_charge_turns}/{self.enemy_charge_max})", SCREEN_W - 400, SCREEN_H * 0.25))
+            # --- 交互：若敵人無法行動且正在蓄力，大招計數器重置 ---
+            if not enemy_can_act and self.enemy_charge_turns > 0:
+                self.enemy_charge_turns = 1
+                self.anim_queue.append(("status_enemy", "蓄力被打斷！", SCREEN_W - 400, SCREEN_H * 0.25))
 
-            # --- 處理成長邏輯 ---
-            if self.enemy_scaling_strength > 0:
-                self.enemy_intent += self.enemy_scaling_strength
-                self.anim_queue.append(("status_enemy", f"力量成長 +{self.enemy_scaling_strength}", SCREEN_W - 400, SCREEN_H * 0.2))
+            if enemy_can_act:
+                damage = enemy_intent
+                self._log(f"敵人 {self.enemy_name} 意圖 {damage} 點攻擊")
 
-            # 因果逆轉判定
-            karma_active = "因果逆轉" in self.powers or "因果逆轉+" in self.powers
-            if karma_active:
-                if random.random() < 0.3:
-                    self.enemy_vulnerable_turns += 3
-                    self.enemy_poison_turns += 3
-                    self.anim_queue.append(("status_enemy", "因果逆轉觸發!", SCREEN_W - 400, SCREEN_H * 0.3))
-                # 物理伤害时反弹一半
-                counter = damage // 2
-                self.enemy_hp -= counter
-                self.anim_queue.append(("status_enemy", f"反彈!-{counter}", SCREEN_W - 400, SCREEN_H * 0.25))
+                # --- 詞條: 狂暴 (Enraged) ---
+                if "Enraged" in getattr(self, "enemy_affixes", []) and self.enemy_hp <= self.enemy_max_hp * 0.5:
+                    damage = int(damage * 1.5)
+                    self.anim_queue.append(("status_enemy", "狂暴！傷害提升", SCREEN_W - 400, SCREEN_H * 0.15))
 
-                # === 新增這裡：防止怪物被彈死卻還能繼續攻擊 ===
-                if self.enemy_hp <= 0:
-                    self.enemy_hp = 0
-                    self.anim_queue.append(("enemy_death",))
-                    self.generate_rewards()
-                    return
-                # ==========================================
+                # --- 環境事件: 雷暴 (15% 打空) ---
+                if self.current_env_event == "雷暴" and random.random() < 0.15:
+                    self.anim_queue.append(("status_enemy", "雷暴！打空了", SCREEN_W - 400, SCREEN_H * 0.25))
+                    damage = 0
 
-                # 升级因果逆转：额外抵挡四分之一伤害
-                if "因果逆轉+" in self.powers:
-                    block_amount = damage // 4
-                    self.player_block += block_amount
-                    self.anim_queue.append(("status_enemy", f"抵擋 {block_amount} 傷害!", 250, SCREEN_H - 350))
+                # --- 交互：連擊壓制 (本回合打出牌 >= 5) ---
+                if self.cards_played_this_turn >= 5:
+                    damage = int(damage * 0.7)
+                    self.anim_queue.append(("status_enemy", "連擊壓制：傷害降低！", SCREEN_W - 400, SCREEN_H * 0.2))
 
-            # --- 處理塞入廢牌邏輯 ---
-            if self.enemy_intent_type == "DEBUFF":
-                void_card = copy.deepcopy(CARD_DATABASE["VOID"])
-                # 塞入抽牌堆頂部
-                self.deck.append(void_card)
-                random.shuffle(self.deck) # 這裡簡單處理，洗入牌庫
-                self.anim_queue.append(("status_enemy", "塞入【虛空】！", SCREEN_W - 400, SCREEN_H * 0.35))
+                # --- 處理大招蓄力邏輯 ---
+                if self.enemy_charge_turns > 0:
+                    if self.enemy_charge_turns >= self.enemy_charge_max:
+                        damage = int(damage * 3.5)
+                        self.anim_queue.append(("status_enemy", "【天罰】釋放！", SCREEN_W - 400, SCREEN_H * 0.25))
+                        self.enemy_charge_turns = 1
+                    else:
+                        self.enemy_charge_turns += 1
+                        self.anim_queue.append(("status_enemy", f"蓄力中...({self.enemy_charge_turns}/{self.enemy_charge_max})", SCREEN_W - 400, SCREEN_H * 0.25))
 
-            actual_dmg = max(0, damage - self.player_block)
-            self.player_hp -= actual_dmg
-            self.stats_total_damage_taken += actual_dmg
-            self._log(f"受到 {actual_dmg} 點傷害 (格擋 {self.player_block})")
-            if actual_dmg > 0:
-                self.anim_queue.append(("damage_player", actual_dmg, 200, SCREEN_H - 350))
-                # 只有未升级的虚空血脉才在受伤时获得力量
-                if "虛空血脈" in self.powers and "虛空血脈+" not in self.powers:
-                    self.strength += 2
-                    self.anim_queue.append(("status_enemy", "力量提升!", 250, SCREEN_H - 350))
-        else:
-            if status_msg:
-                self._log(status_msg)
-                self.anim_queue.append(("status_enemy", status_msg, SCREEN_W - 400, SCREEN_H * 0.3))
+                # --- 處理成長邏輯 ---
+                if self.enemy_scaling_strength > 0:
+                    enemy_intent += self.enemy_scaling_strength
+                    self.anim_queue.append(("status_enemy", f"力量成長 +{self.enemy_scaling_strength}", SCREEN_W - 400, SCREEN_H * 0.2))
+
+                # 因果逆轉判定
+                karma_active = "因果逆轉" in self.powers or "因果逆轉+" in self.powers
+                if karma_active:
+                    if random.random() < 0.3:
+                        self.enemy_vulnerable_turns += 3
+                        self.enemy_poison_turns += 3
+                        self.anim_queue.append(("status_enemy", "因果逆轉觸發!", SCREEN_W - 400, SCREEN_H * 0.3))
+                    # 物理伤害时反弹一半
+                    counter = damage // 2
+                    self.enemy_hp -= counter
+                    if self.wave_enemies and 0 <= self.target_index < len(self.wave_enemies):
+                        self.wave_enemies[self.target_index]["hp"] = self.enemy_hp
+                    self.anim_queue.append(("status_enemy", f"反彈!-{counter}", SCREEN_W - 400, SCREEN_H * 0.25))
+
+                    if self.check_enemy_death():
+                        return
+
+                    # 升级因果逆转：额外抵挡四分之一伤害
+                    if "因果逆轉+" in self.powers:
+                        block_amount = damage // 4
+                        self.player_block += block_amount
+                        self.anim_queue.append(("status_enemy", f"抵擋 {block_amount} 傷害!", 250, SCREEN_H - 350))
+
+                if damage > 0:
+                    actual = max(0, damage - self.player_block)
+                    self.player_block = max(0, self.player_block - damage)
+                    if actual > 0:
+                        self.player_hp -= actual
+                        self.stats_total_damage_taken += actual
+                        self.anim_queue.append(("damage_player", actual, 200, SCREEN_H - 350))
+                    else:
+                        self.anim_queue.append(("status_enemy", "護盾吸收！", 250, SCREEN_H - 350))
+            else:
+                if status_msg:
+                    self._log(status_msg)
+                    self.anim_queue.append(("status_enemy", status_msg, SCREEN_W - 400, SCREEN_H * 0.3))
 
         if self.player_hp <= 0:
             self.player_hp = 0
-            self.state = "GAMEOVER"
+            self.settle_run()
             return
 
         self.player_block = 0
@@ -1547,15 +1870,25 @@ class BattleManager:
 
         if total_dot > 0:
             self.enemy_hp -= total_dot
+            if self.wave_enemies and 0 <= self.target_index < len(self.wave_enemies):
+                self.wave_enemies[self.target_index]["hp"] = self.enemy_hp
             self.anim_queue.append(("dot_damage", total_dot, SCREEN_W - 400, SCREEN_H * 0.4))
-            if self.enemy_hp <= 0:
-                self.enemy_hp = 0
-                self.anim_queue.append(("enemy_death",))
-                self.generate_rewards()
+            if self.check_enemy_death():
                 return
 
         if self.enemy_vulnerable_turns > 0:
             self.enemy_vulnerable_turns -= 1
+
+        # --- 環境事件: 地震 (雙方各受 3 傷害) ---
+        if self.current_env_event == "地震":
+            quake_dmg = 3
+            self.player_hp = max(0, self.player_hp - quake_dmg)
+            self.enemy_hp = max(0, self.enemy_hp - quake_dmg)
+            self.anim_queue.append(("status_enemy", f"地震! 雙方 -{quake_dmg}", 640, 150))
+            if self.player_hp <= 0:
+                self.player_hp = 0
+                self.settle_run()
+                return
 
         self.roll_enemy_intent()
 
@@ -1645,6 +1978,7 @@ class BattleManager:
                 "charge_max": self.enemy_charge_max,
                 "scaling_strength": self.enemy_scaling_strength,
                 "thorns": self.enemy_thorns,
+                "affixes": getattr(self, "enemy_affixes", []),
             },
             "battle": {
                 "current_wave": self.current_wave,
@@ -1661,6 +1995,18 @@ class BattleManager:
                 "enemy_stance": self.enemy_stance,
                 "enemy_stance_enabled": self.enemy_stance_enabled,
                 "bloom_cores": self.bloom_cores,
+                "gold": self.gold,
+                "primogem": self.primogem,
+                "difficulty_tier": self.difficulty_tier,
+                "max_difficulty_tier": self.max_difficulty_tier,
+                "current_env_event": self.current_env_event,
+                "boss_phase_2": self.boss_phase_2,
+                "target_index": self.target_index,
+                "wave_enemies": [
+                    {"name": e["name"], "hp": e["hp"], "max_hp": e["max_hp"],
+                     "min_dmg": e["min_dmg"], "max_dmg": e["max_dmg"]}
+                    for e in self.wave_enemies
+                ],
             },
             "mechanics": {
                 "maya_active": self.maya_active,
@@ -1751,6 +2097,7 @@ class BattleManager:
         self.enemy_charge_max = e.get("charge_max", 4)
         self.enemy_scaling_strength = e.get("scaling_strength", 0)
         self.enemy_thorns = e.get("thorns", 0)
+        self.enemy_affixes = e.get("affixes", [])
 
         # 戰鬥
         b = data.get("battle", {})
@@ -1768,6 +2115,25 @@ class BattleManager:
         self.enemy_stance = b.get("enemy_stance", "ATTACK")
         self.enemy_stance_enabled = b.get("enemy_stance_enabled", False)
         self.bloom_cores = b.get("bloom_cores", 0)
+        self.gold = b.get("gold", 0)
+        self.primogem = b.get("primogem", 0)
+        self.difficulty_tier = b.get("difficulty_tier", 0)
+        self.max_difficulty_tier = b.get("max_difficulty_tier", 5)
+        self.current_env_event = b.get("current_env_event", "")
+        self.boss_phase_2 = b.get("boss_phase_2", False)
+        self.target_index = b.get("target_index", 0)
+        we = b.get("wave_enemies", [])
+        self.wave_enemies = []
+        for e_data in we:
+            self.wave_enemies.append({
+                "name": e_data.get("name", ""),
+                "hp": e_data.get("hp", 0),
+                "max_hp": e_data.get("max_hp", 0),
+                "min_dmg": e_data.get("min_dmg", 5),
+                "max_dmg": e_data.get("max_dmg", 10),
+                "image": load_enemy_image(e_data.get("name", "")),
+                "intent": random.randint(e_data.get("min_dmg", 5), e_data.get("max_dmg", 10)),
+            })
 
         # 機制
         m = data.get("mechanics", {})

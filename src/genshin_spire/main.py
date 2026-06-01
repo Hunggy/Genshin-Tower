@@ -41,6 +41,7 @@ from .ui import (
     draw_mechanics_guide_overlay,
     draw_slot_select_overlay,
 )
+from .ui.shop import draw_shop_surface
 
 
 # --- Module-level initialization (mirrors original file top level) ---
@@ -132,7 +133,7 @@ def main():
         current_bg = None
         if game.state in ["STARTUP", "MAIN_MENU", "SETTINGS", "MODE_SELECT"]:
             current_bg = background_menu
-        elif game.state in ("BATTLE", "REWARD", "ENEMY_TURN", "SELECT_CARD", "DISCOVERY", "UPGRADE_CARD"):
+        elif game.state in ("BATTLE", "REWARD", "ENEMY_TURN", "SELECT_CARD", "DISCOVERY", "UPGRADE_CARD", "SHOP", "SETTLEMENT"):
             current_bg = background_battle
         elif game.state == "JUMP":
             current_bg = background_victory
@@ -177,7 +178,7 @@ def main():
             sound_mgr.set_volume(game.volume)
 
         elif game.state == "MODE_SELECT":
-            mode_rects = draw_mode_select_surface(main_surface, mx, my)
+            mode_rects, blessing_rects = draw_mode_select_surface(main_surface, game, mx, my)
 
         elif game.state in ("BATTLE", "ENEMY_TURN"):
             if game.show_deck:
@@ -192,6 +193,44 @@ def main():
 
         elif game.state == "UPGRADE_CARD":
             close_rect, clicked_card, guide_btn_rect, deck_btn_rect = draw_upgrade_view_surface(main_surface, game, mx, my)
+
+        elif game.state == "SHOP":
+            shop_card_rects, remove_rect, heal_rect, leave_rect = draw_shop_surface(main_surface, game, mx, my)
+
+        elif game.state == "SETTLEMENT":
+            overlay = pygame.Surface((w, h), pygame.SRCALPHA)
+            overlay.fill((0, 0, 0, 200))
+            main_surface.blit(overlay, (0, 0))
+            from .resources import font_big, font_hp, font_main, font_desc
+            from .config import GOLD, WHITE, GREEN, RED
+            title_ts = font_big.render("結算", True, GOLD)
+            main_surface.blit(title_ts, (w // 2 - title_ts.get_width() // 2, 80))
+
+            stats_items = [
+                f"最高波次: {game.stats_highest_wave}",
+                f"擊殺數: {game.stats_total_kills}",
+                f"總傷害: {game.stats_total_damage_dealt}",
+                f"承受傷害: {game.stats_total_damage_taken}",
+                f"觸發反應: {game.stats_total_reactions}",
+                f"打出卡牌: {game.stats_total_cards_played}",
+                f"總回合數: {game.stats_total_turns}",
+            ]
+            for i, text in enumerate(stats_items):
+                ts = font_main.render(text, True, WHITE)
+                main_surface.blit(ts, (w // 2 - ts.get_width() // 2, 150 + i * 32))
+
+            pg_ts = font_big.render(f"獲得原石: {game.run_primogems_earned}", True, (200, 150, 255))
+            main_surface.blit(pg_ts, (w // 2 - pg_ts.get_width() // 2, 400))
+
+            total_ts = font_hp.render(f"原石總計: {game.primogem}", True, (200, 150, 255))
+            main_surface.blit(total_ts, (w // 2 - total_ts.get_width() // 2, 445))
+
+            ok_rect = pygame.Rect(w // 2 - 80, 500, 160, 45)
+            mouse_hover_ok = ok_rect.collidepoint(mx, my)
+            ok_color = (80, 120, 80) if mouse_hover_ok else (60, 90, 60)
+            pygame.draw.rect(main_surface, ok_color, ok_rect, border_radius=8)
+            ok_ts = font_main.render("確定", True, WHITE)
+            main_surface.blit(ok_ts, (ok_rect.x + ok_rect.width // 2 - ok_ts.get_width() // 2, ok_rect.y + 10))
 
         elif game.state == "SELECT_CARD":
             hovered, _, _, _ = draw_ui_surface(main_surface, game, mx, my)
@@ -287,6 +326,8 @@ def main():
                     if game.show_mechanics_guide:
                         game.show_mechanics_guide = False
                         game.mechanics_scroll = 0
+                    elif game.state == "SHOP" and game.shop_mode == "REMOVE_CARD":
+                        game.shop_mode = None
                     elif game.state == "MODE_SELECT":
                         game.state = "MAIN_MENU"
                     elif game.state == "BATTLE":
@@ -302,6 +343,10 @@ def main():
                     game.show_battle_log = not game.show_battle_log
                 elif event.key in (pygame.K_TAB, pygame.K_SPACE) and game.state == "BATTLE" and not game.show_deck and not game.show_mechanics_guide:
                     game.end_turn()
+                elif event.key == pygame.K_q and game.state == "BATTLE" and not game.show_deck and not game.show_mechanics_guide:
+                    game.switch_target(-1)
+                elif event.key == pygame.K_e and game.state == "BATTLE" and not game.show_deck and not game.show_mechanics_guide:
+                    game.switch_target(1)
                 elif event.key in (pygame.K_w, pygame.K_UP):
                     if game.show_deck:
                         game.deck_scroll -= 40
@@ -418,10 +463,20 @@ def main():
                                     break
 
                     elif game.state == "MODE_SELECT":
-                        for mode_id, rect in mode_rects.items():
-                            if rect.collidepoint((mx, my)):
-                                game.apply_mode_modifiers(mode_id)
+                        for item in blessing_rects:
+                            if item["rect"].collidepoint((mx, my)):
+                                b = item["blessing"]
+                                if game.primogem >= b["cost"]:
+                                    game.primogem -= b["cost"]
+                                    if b["apply"]:
+                                        b["apply"](game)
+                                    game.anim_queue.append(("status_enemy", f"祝福: {b['name']}!", 250, 300))
                                 break
+                        else:
+                            for mode_id, rect in mode_rects.items():
+                                if rect.collidepoint((mx, my)):
+                                    game.apply_mode_modifiers(mode_id)
+                                    break
 
                     elif game.state in ("BATTLE", "ENEMY_TURN"):
                         if game.show_deck:
@@ -511,6 +566,30 @@ def main():
                                 game.state = "VICTORY"
                             else:
                                 game.start_next_wave()
+
+                    elif game.state == "SHOP":
+                        shop_card_rects, remove_rect, heal_rect, leave_rect = draw_shop_surface(main_surface, game, mx, my)
+                        if game.shop_mode == "REMOVE_CARD":
+                            for item in shop_card_rects:
+                                if item["rect"].collidepoint((mx, my)):
+                                    game.shop_remove_confirm(item["card"])
+                                    break
+                        elif game.shop_mode is None:
+                            for item in shop_card_rects:
+                                if item["rect"].collidepoint((mx, my)):
+                                    game.shop_buy_card(item["index"])
+                                    break
+                            if remove_rect and remove_rect.collidepoint((mx, my)):
+                                game.shop_remove_card()
+                            elif heal_rect and heal_rect.collidepoint((mx, my)):
+                                game.shop_heal()
+                            elif leave_rect and leave_rect.collidepoint((mx, my)):
+                                game.shop_leave()
+
+                    elif game.state == "SETTLEMENT":
+                        ok_rect = pygame.Rect(w // 2 - 80, 500, 160, 45)
+                        if ok_rect.collidepoint((mx, my)):
+                            game.state = "MAIN_MENU"
 
                     elif game.state == "DISCOVERY":
                         if hovered_discovery:
