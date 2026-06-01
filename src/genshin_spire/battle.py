@@ -376,7 +376,6 @@ class BattleManager:
         self.current_save_slot = 1
         self.show_slot_select = False
         self.slot_select_action = "LOAD"
-        self.primogem = 0
         self.gold = 0
         self.current_env_event = None
         self.state = "MAIN_MENU"
@@ -1754,15 +1753,23 @@ class BattleManager:
             self.sync_target_to_main()
             enemy_intent = e_data.get("intent", self.enemy_intent)
 
-            # --- 每個敵人獨立減少控制狀態 ---
+            # --- 每個敵人獨立控制狀態檢查 ---
             if self.is_multi_enemy():
+                enemy_can_act = True
+                status_msg = ""
                 if e_data.get("stun_turns", 0) > 0:
+                    enemy_can_act = False
+                    status_msg = "敵人暈眩！"
                     e_data["stun_turns"] -= 1
-                if e_data.get("petrify_turns", 0) > 0:
+                elif e_data.get("petrify_turns", 0) > 0:
+                    enemy_can_act = False
+                    status_msg = "敵人石化！"
                     e_data["petrify_turns"] -= 1
-                if e_data.get("frozen_turns", 0) > 0:
+                elif e_data.get("frozen_turns", 0) > 0:
+                    enemy_can_act = False
+                    status_msg = "敵人凍結！"
                     e_data["frozen_turns"] -= 1
-                    if e_data["frozen_turns"] == 0:
+                    if e_data["frozen_turns"] <= 0:
                         e_data["frozen"] = False
                 # 同步到主欄位
                 self.enemy_stun_turns = e_data.get("stun_turns", 0)
@@ -1770,28 +1777,23 @@ class BattleManager:
                 self.enemy_frozen_turns = e_data.get("frozen_turns", 0)
                 self.enemy_frozen = e_data.get("frozen", False)
             else:
-                # 單敵人：使用全局減少
+                # 單敵人
+                enemy_can_act = True
+                status_msg = ""
                 if self.enemy_stun_turns > 0:
+                    enemy_can_act = False
+                    status_msg = "敵人暈眩！"
                     self.enemy_stun_turns -= 1
-                if self.enemy_petrify_turns > 0:
+                elif self.enemy_petrify_turns > 0:
+                    enemy_can_act = False
+                    status_msg = "敵人石化！"
                     self.enemy_petrify_turns -= 1
-                if self.enemy_frozen_turns > 0:
+                elif self.enemy_frozen_turns > 0:
+                    enemy_can_act = False
+                    status_msg = "敵人凍結！"
                     self.enemy_frozen_turns -= 1
-                    if self.enemy_frozen_turns == 0:
+                    if self.enemy_frozen_turns <= 0:
                         self.enemy_frozen = False
-
-            enemy_can_act = True
-            status_msg = ""
-
-            if self.enemy_stun_turns > 0:
-                enemy_can_act = False
-                status_msg = "敵人暈眩！"
-            elif self.enemy_petrify_turns > 0:
-                enemy_can_act = False
-                status_msg = "敵人石化！"
-            elif self.enemy_frozen_turns > 0:
-                enemy_can_act = False
-                status_msg = "敵人凍結！"
 
             # --- 交互：若敵人無法行動且正在蓄力，大招計數器重置 ---
             if not enemy_can_act and self.enemy_charge_turns > 0:

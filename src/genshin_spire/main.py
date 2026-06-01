@@ -219,13 +219,16 @@ def main():
                 ts = font_main.render(text, True, WHITE)
                 main_surface.blit(ts, (w // 2 - ts.get_width() // 2, 150 + i * 32))
 
-            pg_ts = font_big.render(f"獲得原石: {game.run_primogems_earned}", True, (200, 150, 255))
+            pg_ts = font_hp.render(f"獲得原石: {game.run_primogems_earned}", True, (200, 150, 255))
             main_surface.blit(pg_ts, (w // 2 - pg_ts.get_width() // 2, 400))
 
             total_ts = font_hp.render(f"原石總計: {game.primogem}", True, (200, 150, 255))
-            main_surface.blit(total_ts, (w // 2 - total_ts.get_width() // 2, 445))
+            main_surface.blit(total_ts, (w // 2 - total_ts.get_width() // 2, 430))
 
-            ok_rect = pygame.Rect(w // 2 - 80, 500, 160, 45)
+            hint_ts = font_desc.render("原石可在開始遊戲時購買祝福", True, (150, 150, 150))
+            main_surface.blit(hint_ts, (w // 2 - hint_ts.get_width() // 2, 460))
+
+            ok_rect = pygame.Rect(w // 2 - 80, 490, 160, 45)
             mouse_hover_ok = ok_rect.collidepoint(mx, my)
             ok_color = (80, 120, 80) if mouse_hover_ok else (60, 90, 60)
             pygame.draw.rect(main_surface, ok_color, ok_rect, border_radius=8)
@@ -587,7 +590,7 @@ def main():
                                 game.shop_leave()
 
                     elif game.state == "SETTLEMENT":
-                        ok_rect = pygame.Rect(w // 2 - 80, 500, 160, 45)
+                        ok_rect = pygame.Rect(w // 2 - 80, 490, 160, 45)
                         if ok_rect.collidepoint((mx, my)):
                             game.state = "MAIN_MENU"
 
