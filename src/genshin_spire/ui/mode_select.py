@@ -1,6 +1,8 @@
 import pygame
 
-from ..config import GOLD, WHITE, GRAY, LIGHT_BG
+from ..config import GOLD, WHITE
+
+GRAY = (128, 128, 128)
 from ..resources import font_big, font_hp, font_main, font_desc
 
 

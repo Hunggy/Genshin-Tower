@@ -1,7 +1,10 @@
 import pygame
-from ..config import GOLD, WHITE, RED, GREEN, ORANGE, GRAY, DARK_BG, LIGHT_BG, BRIGHT_GREEN
+from ..config import GOLD, WHITE, RED, GREEN, ORANGE
 from ..resources import font_main, font_hp, font_desc, font_big
 from .common import draw_bar
+
+GRAY = (128, 128, 128)
+BRIGHT_GREEN = (100, 220, 100)
 
 
 def draw_shop_surface(surface, game, mx, my):
