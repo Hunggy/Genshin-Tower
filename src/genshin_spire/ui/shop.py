@@ -14,11 +14,11 @@ def draw_shop_surface(surface, game, mx, my):
     overlay.fill((0, 0, 0, 180))
     surface.blit(overlay, (0, 0))
 
-    title_ts = font_big.render("商店", True, GOLD)
-    surface.blit(title_ts, (w // 2 - title_ts.get_width() // 2, 30))
+    title_ts = font_hp.render("商店", True, GOLD)
+    surface.blit(title_ts, (w // 2 - title_ts.get_width() // 2, 20))
 
-    gold_ts = font_hp.render(f"金幣: {game.gold}", True, GOLD)
-    surface.blit(gold_ts, (w // 2 - gold_ts.get_width() // 2, 70))
+    gold_ts = font_main.render(f"金幣: {game.gold}", True, GOLD)
+    surface.blit(gold_ts, (w // 2 - gold_ts.get_width() // 2, 52))
 
     card_rects = []
     if game.shop_mode is None:
