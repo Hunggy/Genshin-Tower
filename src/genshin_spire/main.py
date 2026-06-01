@@ -555,18 +555,10 @@ def main():
                             clicked_card.upgrade()
                             game._sync_power_entry_for_card(clicked_card)
                             game.pending_upgrade = False
-                            game.current_wave += 1
-                            if game.current_wave > game.max_waves:
-                                game.state = "VICTORY"
-                            else:
-                                game.start_next_wave()
+                            game.choose_reward()
                         elif close_rect.collidepoint((mx, my)):
                             game.pending_upgrade = False
-                            game.current_wave += 1
-                            if game.current_wave > game.max_waves:
-                                game.state = "VICTORY"
-                            else:
-                                game.start_next_wave()
+                            game.choose_reward()
 
                     elif game.state == "SHOP":
                         shop_card_rects, remove_rect, heal_rect, leave_rect = draw_shop_surface(main_surface, game, mx, my)
