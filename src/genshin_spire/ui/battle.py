@@ -32,44 +32,48 @@ def draw_ui_surface(surface, game, mx, my):
     # --- 多敵人顯示 ---
     wave_enemies = getattr(game, "wave_enemies", [])
     if len(wave_enemies) > 1:
-        num_enemies = len(wave_enemies)
-        spacing = min(180, (w - 500) // num_enemies)
-        start_x = w - 480 - (num_enemies - 1) * spacing // 2
-        for i, e_data in enumerate(wave_enemies):
-            if e_data["hp"] <= 0:
-                continue
-            ex = start_x + i * spacing
-            ey = h * 0.35
+        living = [(i, e) for i, e in enumerate(wave_enemies) if e["hp"] > 0]
+        num_enemies = len(living)
+        slot_w = 200
+        total_w = num_enemies * slot_w
+        start_x = w - 480 - total_w // 2 + slot_w // 2 - 60
+        ey = int(h * 0.32)
+
+        for idx_in_living, (i, e_data) in enumerate(living):
+            cx = start_x + idx_in_living * slot_w
             is_target = (i == getattr(game, "target_index", 0))
+
+            # 名稱 (最上方，居中)
+            e_name_ts = font_hp.render(e_data["name"], True, GOLD if is_target else WHITE)
+            name_w = e_name_ts.get_width()
+            surface.blit(e_name_ts, (cx + 60 - name_w // 2, ey - 25))
 
             # 目標指示器
             if is_target:
-                pygame.draw.rect(surface, (255, 255, 0), (ex - 5, ey - 5, 130, 135), 3, border_radius=8)
+                pygame.draw.rect(surface, (255, 255, 0), (cx - 2, ey - 5, 124, 135), 3, border_radius=8)
 
-            # 敵人圖片
+            # 敵人圖片 (居中)
             e_img = e_data.get("image")
             if e_img:
-                surface.blit(e_img, (ex + (120 - e_img.get_width()) // 2, ey + (120 - e_img.get_height()) // 2))
+                surface.blit(e_img, (cx + 60 - e_img.get_width() // 2, ey + (120 - e_img.get_height()) // 2))
             else:
-                pygame.draw.rect(surface, (150, 50, 50), pygame.Rect(ex, ey, 120, 120), border_radius=10)
+                pygame.draw.rect(surface, (150, 50, 50), pygame.Rect(cx, ey, 120, 120), border_radius=10)
 
-            # 名稱
-            e_name_ts = font_desc.render(e_data["name"], True, GOLD if is_target else WHITE)
-            surface.blit(e_name_ts, (ex, ey - 18))
+            # HP 條 (圖片下方)
+            draw_bar(surface, cx, ey + 125, e_data["hp"], e_data["max_hp"], 0, RED)
+            hp_text = font_desc.render(f"{e_data['hp']}/{e_data['max_hp']}", True, WHITE)
+            surface.blit(hp_text, (cx + 60 - hp_text.get_width() // 2, ey + 126))
 
-            # HP 條
-            draw_bar(surface, ex, ey + 125, e_data["hp"], e_data["max_hp"], 0, RED)
-
-            # 意圖
+            # 意圖 (HP 條下方)
             e_intent = e_data.get("intent", 0)
             e_ratio = e_intent / max(1, game.player_max_hp)
             e_color = GREEN if e_ratio <= 0.15 else ((255, 200, 0) if e_ratio <= 0.30 else RED)
-            e_intent_ts = font_desc.render(f"⚔{e_intent}", True, e_color)
-            surface.blit(e_intent_ts, (ex, ey + 140))
+            e_intent_ts = font_main.render(f"⚔ {e_intent}", True, e_color)
+            surface.blit(e_intent_ts, (cx + 60 - e_intent_ts.get_width() // 2, ey + 145))
 
-        # 切換目標提示
+        # 切換目標提示 (所有敵人下方)
         hint_ts = font_main.render("[Q/E 切換目標]", True, (150, 150, 150))
-        surface.blit(hint_ts, (w - 480, h * 0.65))
+        surface.blit(hint_ts, (w // 2 - hint_ts.get_width() // 2, ey + 175))
 
     elif game.enemy_hp > 0:
         enemy_rect = pygame.Rect(w - 430, h * 0.35, 120, 120)
