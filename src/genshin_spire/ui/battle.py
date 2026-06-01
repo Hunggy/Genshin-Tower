@@ -68,12 +68,35 @@ def draw_ui_surface(surface, game, mx, my):
             e_intent = e_data.get("intent", 0)
             e_ratio = e_intent / max(1, game.player_max_hp)
             e_color = GREEN if e_ratio <= 0.15 else ((255, 200, 0) if e_ratio <= 0.30 else RED)
-            e_intent_ts = font_main.render(f"⚔ {e_intent}", True, e_color)
+            e_intent_ts = font_main.render(f"攻擊 {e_intent}", True, e_color)
             surface.blit(e_intent_ts, (cx + 60 - e_intent_ts.get_width() // 2, ey + 145))
+
+            # 狀態效果顯示
+            status_y = ey + 165
+            if e_data.get("stun_turns", 0) > 0:
+                s_ts = font_desc.render(f"[暈眩 {e_data['stun_turns']}]", True, (255, 200, 100))
+                surface.blit(s_ts, (cx + 60 - s_ts.get_width() // 2, status_y))
+                status_y += 16
+            if e_data.get("frozen_turns", 0) > 0:
+                s_ts = font_desc.render(f"[凍結 {e_data['frozen_turns']}]", True, (100, 200, 255))
+                surface.blit(s_ts, (cx + 60 - s_ts.get_width() // 2, status_y))
+                status_y += 16
+            if e_data.get("petrify_turns", 0) > 0:
+                s_ts = font_desc.render(f"[石化 {e_data['petrify_turns']}]", True, (150, 150, 150))
+                surface.blit(s_ts, (cx + 60 - s_ts.get_width() // 2, status_y))
+                status_y += 16
+            if e_data.get("wet", False):
+                wt = e_data.get("wet_turns", 0)
+                s_ts = font_desc.render(f"[潮濕 {wt}]" if wt > 0 else "[潮濕]", True, (50, 150, 255))
+                surface.blit(s_ts, (cx + 60 - s_ts.get_width() // 2, status_y))
+                status_y += 16
+            if e_data.get("poison_turns", 0) > 0:
+                s_ts = font_desc.render(f"[中毒 {e_data['poison_turns']}]", True, (100, 200, 50))
+                surface.blit(s_ts, (cx + 60 - s_ts.get_width() // 2, status_y))
 
         # 切換目標提示 (所有敵人下方)
         hint_ts = font_main.render("[Q/E 切換目標]", True, (150, 150, 150))
-        surface.blit(hint_ts, (w // 2 - hint_ts.get_width() // 2, ey + 175))
+        surface.blit(hint_ts, (w // 2 - hint_ts.get_width() // 2, ey + 195))
 
     elif game.enemy_hp > 0:
         enemy_rect = pygame.Rect(w - 430, h * 0.35, 120, 120)

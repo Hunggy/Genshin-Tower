@@ -972,6 +972,7 @@ class BattleManager:
                             self.anim_queue.append(("status_enemy", "控制無效！", SCREEN_W - 400, SCREEN_H * 0.25))
                     else:
                         self.anim_queue.append(("status_enemy", "控制上限！", SCREEN_W - 400, SCREEN_H * 0.25))
+                    self.sync_status_to_target()
                     self.check_enemy_death()
                     return True
                 elif card_name == "荒星防护":
@@ -995,6 +996,7 @@ class BattleManager:
                             self.anim_queue.append(("status_enemy", "控制無效！", SCREEN_W - 400, SCREEN_H * 0.25))
                     else:
                         self.anim_queue.append(("status_enemy", "控制上限！", SCREEN_W - 400, SCREEN_H * 0.25))
+                    self.sync_status_to_target()
                     self.check_enemy_death()
                     return True
                 elif card_name == "雨神之护":
@@ -1015,6 +1017,7 @@ class BattleManager:
                     self.hand.remove(card)
                 self._dispose_played_card(card)
 
+            self.sync_status_to_target()
             self.check_enemy_death()
             return True
         return False
@@ -1552,6 +1555,12 @@ class BattleManager:
                     "min_dmg": self.enemy_min_dmg,
                     "max_dmg": self.enemy_max_dmg,
                     "image": e_img,
+                    "intent": random.randint(self.enemy_min_dmg, self.enemy_max_dmg),
+                    "wet": False, "wet_turns": 0,
+                    "stun_turns": 0, "petrify_turns": 0,
+                    "frozen": False, "frozen_turns": 0,
+                    "poison_turns": 0, "dot_turns": 0, "dot_damage": 0,
+                    "vulnerable_turns": 0,
                 })
             # 同步主目標到 wave_enemies[0]
             self.enemy_hp = self.wave_enemies[0]["hp"]
@@ -1590,10 +1599,67 @@ class BattleManager:
             self.enemy_max_hp = e["max_hp"]
             self.enemy_name = e["name"]
             self.enemy_image = e["image"]
+            # 同步狀態到主欄位
+            if self.is_multi_enemy():
+                self.enemy_wet = e.get("wet", False)
+                self.enemy_wet_turns = e.get("wet_turns", 0)
+                self.enemy_stun_turns = e.get("stun_turns", 0)
+                self.enemy_petrify_turns = e.get("petrify_turns", 0)
+                self.enemy_frozen = e.get("frozen", False)
+                self.enemy_frozen_turns = e.get("frozen_turns", 0)
+                self.enemy_poison_turns = e.get("poison_turns", 0)
+                self.enemy_dot_turns = e.get("dot_turns", 0)
+                self.enemy_dot_damage = e.get("dot_damage", 0)
+                self.enemy_vulnerable_turns = e.get("vulnerable_turns", 0)
+
+    def sync_status_to_target(self):
+        """將主欄位的狀態同步寫回當前目標的 per-enemy 存儲"""
+        if self.is_multi_enemy() and 0 <= self.target_index < len(self.wave_enemies):
+            e = self.wave_enemies[self.target_index]
+            e["wet"] = self.enemy_wet
+            e["wet_turns"] = self.enemy_wet_turns
+            e["stun_turns"] = self.enemy_stun_turns
+            e["petrify_turns"] = self.enemy_petrify_turns
+            e["frozen"] = self.enemy_frozen
+            e["frozen_turns"] = self.enemy_frozen_turns
+            e["poison_turns"] = self.enemy_poison_turns
+            e["dot_turns"] = self.enemy_dot_turns
+            e["dot_damage"] = self.enemy_dot_damage
+            e["vulnerable_turns"] = self.enemy_vulnerable_turns
 
     def get_living_enemies(self):
         """返回所有存活的敵人列表 [(index, enemy_dict)]"""
         return [(i, e) for i, e in enumerate(self.wave_enemies) if e["hp"] > 0]
+
+    def is_multi_enemy(self):
+        """是否為多敵人波次"""
+        return len(self.wave_enemies) > 1
+
+    def _get_target_status(self, key, default=0):
+        """取得當前目標敵人的狀態值"""
+        if self.is_multi_enemy() and 0 <= self.target_index < len(self.wave_enemies):
+            return self.wave_enemies[self.target_index].get(key, default)
+        return getattr(self, f"enemy_{key}" if key != "wet" else "enemy_wet", default)
+
+    def _set_target_status(self, key, value):
+        """設定當前目標敵人的狀態值"""
+        if self.is_multi_enemy() and 0 <= self.target_index < len(self.wave_enemies):
+            self.wave_enemies[self.target_index][key] = value
+        else:
+            if key == "wet":
+                self.enemy_wet = value
+            else:
+                setattr(self, f"enemy_{key}", value)
+
+    def _get_target_status_turns(self, key):
+        """取得當前目標敵人的狀態回合數"""
+        turns_key = f"{key}_turns" if not key.endswith("_turns") else key
+        return self._get_target_status(turns_key, 0)
+
+    def _set_target_status_turns(self, key, value):
+        """設定當前目標敵人的狀態回合數"""
+        turns_key = f"{key}_turns" if not key.endswith("_turns") else key
+        self._set_target_status(turns_key, value)
 
     def sync_all_enemies_from_main(self):
         """將主 enemy_hp 寫回 wave_enemies[0] (在 apply_damage 後調用)"""
@@ -1683,20 +1749,36 @@ class BattleManager:
         # --- 處理所有存活敵人的行動 ---
         living = self.get_living_enemies() if self.wave_enemies else [(0, {"intent": self.enemy_intent})]
 
-        # --- 減少控制狀態計數 (每回合一次) ---
-        if self.enemy_stun_turns > 0:
-            self.enemy_stun_turns -= 1
-        if self.enemy_petrify_turns > 0:
-            self.enemy_petrify_turns -= 1
-        if self.enemy_frozen_turns > 0:
-            self.enemy_frozen_turns -= 1
-            if self.enemy_frozen_turns == 0:
-                self.enemy_frozen = False
-
         for idx, e_data in living:
             self.target_index = idx
             self.sync_target_to_main()
             enemy_intent = e_data.get("intent", self.enemy_intent)
+
+            # --- 每個敵人獨立減少控制狀態 ---
+            if self.is_multi_enemy():
+                if e_data.get("stun_turns", 0) > 0:
+                    e_data["stun_turns"] -= 1
+                if e_data.get("petrify_turns", 0) > 0:
+                    e_data["petrify_turns"] -= 1
+                if e_data.get("frozen_turns", 0) > 0:
+                    e_data["frozen_turns"] -= 1
+                    if e_data["frozen_turns"] == 0:
+                        e_data["frozen"] = False
+                # 同步到主欄位
+                self.enemy_stun_turns = e_data.get("stun_turns", 0)
+                self.enemy_petrify_turns = e_data.get("petrify_turns", 0)
+                self.enemy_frozen_turns = e_data.get("frozen_turns", 0)
+                self.enemy_frozen = e_data.get("frozen", False)
+            else:
+                # 單敵人：使用全局減少
+                if self.enemy_stun_turns > 0:
+                    self.enemy_stun_turns -= 1
+                if self.enemy_petrify_turns > 0:
+                    self.enemy_petrify_turns -= 1
+                if self.enemy_frozen_turns > 0:
+                    self.enemy_frozen_turns -= 1
+                    if self.enemy_frozen_turns == 0:
+                        self.enemy_frozen = False
 
             enemy_can_act = True
             status_msg = ""
