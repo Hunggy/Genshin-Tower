@@ -201,8 +201,6 @@ def main():
             overlay = pygame.Surface((w, h), pygame.SRCALPHA)
             overlay.fill((0, 0, 0, 200))
             main_surface.blit(overlay, (0, 0))
-            from .resources import font_big, font_hp, font_main, font_desc
-            from .config import GOLD, WHITE, GREEN, RED
             title_ts = font_big.render("結算", True, GOLD)
             main_surface.blit(title_ts, (w // 2 - title_ts.get_width() // 2, 80))
 
