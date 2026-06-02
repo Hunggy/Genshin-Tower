@@ -405,6 +405,7 @@ class BattleManager:
             max_difficulty_tier=self.max_difficulty_tier,
             blessing_counts=self.blessing_counts
         )
+        self._log(f"重置遊戲時元數據已保存: primogem={self.primogem}")
 
     def start_endless_mode(self):
         """啟動無盡模式"""
@@ -1356,6 +1357,7 @@ class BattleManager:
             self._log(f"難度階層提升至 {self.difficulty_tier}！")
 
         # 保存元數據
+        self._log(f"保存元數據: primogem={self.primogem}, difficulty_tier={self.difficulty_tier}, blessing_counts={self.blessing_counts}")
         save_meta_data(
             primogem=self.primogem,
             difficulty_tier=self.difficulty_tier,
