@@ -43,7 +43,8 @@ def draw_shop_surface(surface, game, mx, my):
             surface.blit(type_ts, (cx + 10, cy + 38))
 
             if card.custom_desc:
-                desc_lines = card.custom_desc.split("。")
+                desc_text = card.custom_desc.replace("{dmg}", str(card.damage)).replace("{blk}", str(card.block)).replace("{hits}", str(card.hits))
+                desc_lines = desc_text.split("。")
                 for j, line in enumerate(desc_lines[:3]):
                     desc_ts = font_desc.render(line, True, (180, 180, 180))
                     surface.blit(desc_ts, (cx + 10, cy + 62 + j * 18))

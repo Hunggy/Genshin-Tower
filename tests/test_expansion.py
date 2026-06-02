@@ -257,7 +257,7 @@ def test_blessings_exist(gm):
     for b in BLESSINGS:
         assert "id" in b
         assert "name" in b
-        assert "cost" in b
+        assert "base_cost" in b
         assert "apply" in b
 
 

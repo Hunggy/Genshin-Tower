@@ -467,11 +467,13 @@ def main():
                         for item in blessing_rects:
                             if item["rect"].collidepoint((mx, my)):
                                 b = item["blessing"]
-                                if game.primogem >= b["cost"]:
-                                    game.primogem -= b["cost"]
+                                cost = item["cost"]
+                                bought = item["bought"]
+                                if bought < b["max_count"] and game.primogem >= cost:
+                                    game.primogem -= cost
+                                    game.blessing_counts[b["id"]] = bought + 1
                                     if b["apply"]:
                                         b["apply"](game)
-                                    game.anim_queue.append(("status_enemy", f"祝福: {b['name']}!", 250, 300))
                                 break
                         else:
                             for mode_id, rect in mode_rects.items():

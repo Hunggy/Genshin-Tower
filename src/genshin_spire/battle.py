@@ -14,6 +14,7 @@ from .resources import (
 from .card import Card, CARD_DATABASE, CARD_NAME_TO_KEY, RELIC_DATABASE
 from .animation import AnimationManager, FloatText, FlashScreen, ShakeScreen
 from .audio import play_bgm
+from .save import save_meta_data, load_meta_data
 
 
 # --- 精英敵人詞條 ---
@@ -35,16 +36,21 @@ ENV_EVENTS = {
 }
 
 BLESSINGS = [
-    {"id": "bless_hp", "name": "生命祝福", "desc": "初始生命 +5", "cost": 10, "color": (100, 200, 100),
+    {"id": "bless_hp", "name": "生命祝福", "desc": "初始生命 +5", "base_cost": 10, "color": (100, 200, 100),
+     "max_count": 3, "cost_mult": 1.5,
      "apply": lambda g: setattr(g, 'player_max_hp', g.player_max_hp + 5)},
-    {"id": "bless_energy", "name": "能量祝福", "desc": "初始能量 +1", "cost": 15, "color": (100, 150, 255),
+    {"id": "bless_energy", "name": "能量祝福", "desc": "初始能量 +1", "base_cost": 15, "color": (100, 150, 255),
+     "max_count": 2, "cost_mult": 2.0,
      "apply": lambda g: setattr(g, 'base_energy', g.base_energy + 1)},
-    {"id": "bless_strength", "name": "力量祝福", "desc": "初始力量 +1", "cost": 20, "color": (255, 100, 100),
+    {"id": "bless_strength", "name": "力量祝福", "desc": "初始力量 +1", "base_cost": 20, "color": (255, 100, 100),
+     "max_count": 2, "cost_mult": 2.0,
      "apply": lambda g: setattr(g, 'strength', g.strength + 1)},
-    {"id": "bless_gold", "name": "黃金祝福", "desc": "初始金幣 +30", "cost": 8, "color": (255, 215, 0),
+    {"id": "bless_gold", "name": "黃金祝福", "desc": "初始金幣 +30", "base_cost": 8, "color": (255, 215, 0),
+     "max_count": 3, "cost_mult": 1.5,
      "apply": lambda g: setattr(g, 'gold', g.gold + 30)},
-    {"id": "bless_card", "name": "卡牌祝福", "desc": "從 3 張卡中選 1 張加入初始牌組", "cost": 12, "color": (200, 100, 255),
-     "apply": None},  # 需要特殊處理
+    {"id": "bless_card", "name": "卡牌祝福", "desc": "從 3 張卡中選 1 張加入初始牌組", "base_cost": 12, "color": (200, 100, 255),
+     "max_count": 2, "cost_mult": 2.0,
+     "apply": None},
 ]
 
 
@@ -54,6 +60,13 @@ class BattleManager:
         self.state = "STARTUP"
         self.alpha = 0
         self.fullscreen = False
+
+        # 加載元數據（原石、難度、祝福次數）
+        meta = load_meta_data()
+        self.primogem = meta.get("primogem", 0)
+        self.difficulty_tier = meta.get("difficulty_tier", 0)
+        self.max_difficulty_tier = meta.get("max_difficulty_tier", 5)
+        self.blessing_counts = meta.get("blessing_counts", {})
         self.volume = 0.5
 
         # 波次與無盡模式
@@ -92,6 +105,7 @@ class BattleManager:
         self.difficulty_tier = 0       # 通關後+1的難度階層
         self.max_difficulty_tier = 5   # 最高難度階層
         self.primogem = 0             # 局外貨幣：原石
+        self.blessing_counts = {}     # 祝福購買次數
         self.gold = 0                 # 局內貨幣：金幣
         self.current_env_event = None  # 當前環境事件
 
@@ -383,6 +397,14 @@ class BattleManager:
         self.volume = vol
         if pygame.mixer.get_init():
             pygame.mixer.music.set_volume(self.volume)
+
+        # 嘗試保存元數據（避免重置時丟失）
+        save_meta_data(
+            primogem=self.primogem,
+            difficulty_tier=self.difficulty_tier,
+            max_difficulty_tier=self.max_difficulty_tier,
+            blessing_counts=self.blessing_counts
+        )
 
     def start_endless_mode(self):
         """啟動無盡模式"""
@@ -1333,6 +1355,14 @@ class BattleManager:
             self.difficulty_tier += 1
             self._log(f"難度階層提升至 {self.difficulty_tier}！")
 
+        # 保存元數據
+        save_meta_data(
+            primogem=self.primogem,
+            difficulty_tier=self.difficulty_tier,
+            max_difficulty_tier=self.max_difficulty_tier,
+            blessing_counts=self.blessing_counts
+        )
+
         self.state = "SETTLEMENT"
         self._log(f"結算: {primogems} 原石 (波{waves}×2 + 殺{kills}×5 + 反{reactions}×3)")
 
@@ -2131,6 +2161,7 @@ class BattleManager:
                 "total_reactions": self.stats_total_reactions,
             },
             "achievements": list(self.unlocked_achievements),
+            "blessing_counts": self.blessing_counts,
         }
 
     def load_from_dict(self, data):
@@ -2238,6 +2269,9 @@ class BattleManager:
 
         # 成就
         self.unlocked_achievements = set(data.get("achievements", []))
+
+        # 祝福計數
+        self.blessing_counts = data.get("blessing_counts", {})
 
         # 牌堆
         self.deck = self._pile_from_dict(data.get("deck", []))

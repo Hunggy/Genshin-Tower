@@ -1,8 +1,7 @@
 import json
 import os
 
-from .config import get_save_path, SAVE_VERSION
-from .battle import BattleManager
+from .config import get_save_path
 
 
 MODE_DISPLAY_NAMES = {
@@ -109,12 +108,59 @@ def load_game(game, slot=None):
 
 
 def delete_savegame(slot=None):
-    """刪除存檔文件。若未指定 slot，刪除當前遊戲的存檔槽位。"""
+    """删除存档文件。若未指定 slot，删除当前游戏的存档槽位。"""
     if slot is None:
-        slot = 1  # fallback
+        slot = 1
     path = get_save_path(slot)
     if os.path.exists(path):
         os.remove(path)
+
+
+def save_meta_data(primogem=0, difficulty_tier=0, max_difficulty_tier=5, blessing_counts={}):
+    """保存元数据到 meta_save.json，format: {"primogem": int, "difficulty_tier": int, "max_difficulty_tier": int, "blessing_counts": {str: int}}"""
+    meta_path = "meta_save.json"
+    meta_data = {
+        "primogem": primogem,
+        "difficulty_tier": difficulty_tier,
+        "max_difficulty_tier": max_difficulty_tier,
+        "blessing_counts": blessing_counts
+    }
+    try:
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(meta_data, f, ensure_ascii=False, indent=2)
+        print(f"元數據已保存: primogem={primogem}, difficulty_tier={difficulty_tier}")
+        return True
+    except Exception as e:
+        print(f"保存元數據失敗: {e}")
+        return False
+
+
+def load_meta_data():
+    """读取元数据，returns dict，如果文件不存在返回默认值"""
+    default_data = {
+        "primogem": 0,
+        "difficulty_tier": 0,
+        "max_difficulty_tier": 5,
+        "blessing_counts": {}
+    }
+    meta_path = "meta_save.json"
+    if not os.path.exists(meta_path):
+        return default_data
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {
+            "primogem": data.get("primogem", 0),
+            "difficulty_tier": data.get("difficulty_tier", 0),
+            "max_difficulty_tier": data.get("max_difficulty_tier", 5),
+            "blessing_counts": data.get("blessing_counts", {})
+        }
+    except json.JSONDecodeError:
+        print("元數據文件損壞，返回默認值")
+        return default_data
+    except Exception as e:
+        print(f"讀取元數據失敗: {e}")
+        return default_data
 
 
 # --- 特殊機制圖鑑 ---

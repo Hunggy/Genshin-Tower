@@ -21,12 +21,23 @@ def draw_mode_select_surface(surface, game, mx, my):
             bx = 20 + i * 190
             by = blessing_y + 28
             br = pygame.Rect(bx, by, 180, 50)
-            blessing_rects.append({"rect": br, "blessing": b})
+            counts = getattr(game, 'blessing_counts', {})
+            bought = counts.get(b["id"], 0)
+            cost = int(b["base_cost"] * (b["cost_mult"] ** bought))
+            maxed = bought >= b["max_count"]
+            blessing_rects.append({"rect": br, "blessing": b, "cost": cost, "bought": bought})
             is_hover = br.collidepoint((mx, my))
-            can_afford = game.primogem >= b["cost"]
-            bg = tuple(min(255, c + 30) if is_hover else c for c in b["color"]) if can_afford else (60, 60, 60)
+            can_afford = game.primogem >= cost and not maxed
+            if maxed:
+                bg = (50, 50, 50)
+            else:
+                bg = tuple(min(255, c + 30) if is_hover else c for c in b["color"]) if can_afford else (60, 60, 60)
             pygame.draw.rect(surface, bg, br, border_radius=5)
-            name_ts = font_desc.render(f"{b['name']} ({b['cost']}原石)", True, WHITE if can_afford else GRAY)
+            if maxed:
+                label = f"{b['name']} (已滿)"
+            else:
+                label = f"{b['name']} ({cost}原石) [{bought}/{b['max_count']}]"
+            name_ts = font_desc.render(label, True, WHITE if can_afford else GRAY)
             surface.blit(name_ts, (bx + 5, by + 5))
             desc_ts = font_desc.render(b["desc"], True, (180, 180, 180) if can_afford else (80, 80, 80))
             surface.blit(desc_ts, (bx + 5, by + 25))

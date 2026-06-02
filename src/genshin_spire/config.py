@@ -35,6 +35,17 @@ def get_save_path(slot=1):
     return os.path.join(save_dir, f"savegame_{slot}.json")
 
 
+def get_meta_save_path():
+    """元數據存檔路徑（原石、難度、祝福次數等跨局數據）"""
+    if getattr(sys, 'frozen', False):
+        save_dir = os.path.join(os.path.expanduser("~"), "Documents", "GenshinSpire")
+    else:
+        save_dir = PROJECT_ROOT
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    return os.path.join(save_dir, "meta_save.json")
+
+
 SCREEN_W, SCREEN_H = 1280, 720
 
 # 字體加載（統一使用支援中文的系統字體，避免彈出文字顯示為空白）
