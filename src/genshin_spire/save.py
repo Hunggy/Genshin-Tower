@@ -1,7 +1,7 @@
 import json
 import os
 
-from .config import get_save_path
+from .config import get_save_path, get_meta_save_path
 
 
 MODE_DISPLAY_NAMES = {
@@ -118,7 +118,7 @@ def delete_savegame(slot=None):
 
 def save_meta_data(primogem=0, difficulty_tier=0, max_difficulty_tier=5, blessing_counts={}):
     """保存元数据到 meta_save.json，format: {"primogem": int, "difficulty_tier": int, "max_difficulty_tier": int, "blessing_counts": {str: int}}"""
-    meta_path = "meta_save.json"
+    meta_path = get_meta_save_path()
     meta_data = {
         "primogem": primogem,
         "difficulty_tier": difficulty_tier,
@@ -137,14 +137,26 @@ def save_meta_data(primogem=0, difficulty_tier=0, max_difficulty_tier=5, blessin
 
 def load_meta_data():
     """读取元数据，returns dict，如果文件不存在返回默认值"""
+    meta_path = get_meta_save_path()
     default_data = {
         "primogem": 0,
         "difficulty_tier": 0,
         "max_difficulty_tier": 5,
         "blessing_counts": {}
     }
-    meta_path = "meta_save.json"
     if not os.path.exists(meta_path):
+        return default_data
+    try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return {
+            "primogem": data.get("primogem", 0),
+            "difficulty_tier": data.get("difficulty_tier", 0),
+            "max_difficulty_tier": data.get("max_difficulty_tier", 5),
+            "blessing_counts": data.get("blessing_counts", {})
+        }
+    except Exception as e:
+        print(f"讀取元數據失敗: {e}")
         return default_data
     try:
         with open(meta_path, "r", encoding="utf-8") as f:
