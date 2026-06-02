@@ -63,10 +63,12 @@ class BattleManager:
 
         # 加載元數據（原石、難度、祝福次數）
         meta = load_meta_data()
+        print(f"[__init__] 讀取元數據成功, meta 中 primogem: {meta['primogem']}")
         self.primogem = meta.get("primogem", 0)
         self.difficulty_tier = meta.get("difficulty_tier", 0)
         self.max_difficulty_tier = meta.get("max_difficulty_tier", 5)
         self.blessing_counts = meta.get("blessing_counts", {})
+        print(f"[__init__] 運行時 primogem (初始): {self.primogem}")
         self.volume = 0.5
 
         # 波次與無盡模式
