@@ -400,15 +400,6 @@ class BattleManager:
         if pygame.mixer.get_init():
             pygame.mixer.music.set_volume(self.volume)
 
-        # 嘗試保存元數據（避免重置時丟失）
-        save_meta_data(
-            primogem=self.primogem,
-            difficulty_tier=self.difficulty_tier,
-            max_difficulty_tier=self.max_difficulty_tier,
-            blessing_counts=self.blessing_counts
-        )
-        self._log(f"重置遊戲時元數據已保存: primogem={self.primogem}")
-
     def start_endless_mode(self):
         """啟動無盡模式"""
         self.is_endless = True
