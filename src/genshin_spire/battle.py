@@ -14,7 +14,7 @@ from .resources import (
 from .card import Card, CARD_DATABASE, CARD_NAME_TO_KEY, RELIC_DATABASE
 from .animation import AnimationManager, FloatText, FlashScreen, ShakeScreen
 from .audio import play_bgm
-from .save import save_meta_data, load_meta_data
+from .save import save_meta_data, load_meta_data, delete_savegame
 
 
 # --- 精英敵人詞條 ---
@@ -63,12 +63,10 @@ class BattleManager:
 
         # 加載元數據（原石、難度、祝福次數）
         meta = load_meta_data()
-        print(f"[__init__] 讀取元數據成功, meta 中 primogem: {meta['primogem']}")
         self.primogem = meta.get("primogem", 0)
         self.difficulty_tier = meta.get("difficulty_tier", 0)
         self.max_difficulty_tier = meta.get("max_difficulty_tier", 5)
-        self.blessing_counts = meta.get("blessing_counts", {})
-        print(f"[__init__] 運行時 primogem (初始): {self.primogem}")
+        self.blessing_counts = {}
         self.volume = 0.5
 
         # 波次與無盡模式
@@ -103,11 +101,7 @@ class BattleManager:
         self.show_slot_select = False
         self.slot_select_action = "LOAD"
 
-        # 局外成長與難度
-        self.difficulty_tier = 0       # 通關後+1的難度階層
-        self.max_difficulty_tier = 5   # 最高難度階層
-        self.primogem = 0             # 局外貨幣：原石
-        self.blessing_counts = {}     # 祝福購買次數
+        # 局外成長與難度（已融合進元數據加載，不再重新初始化）
         self.gold = 0                 # 局內貨幣：金幣
         self.current_env_event = None  # 當前環境事件
 
@@ -394,6 +388,7 @@ class BattleManager:
         self.slot_select_action = "LOAD"
         self.gold = 0
         self.current_env_event = None
+        self.blessing_counts = {}
         self.state = "MAIN_MENU"
 
         self.volume = vol
@@ -420,6 +415,9 @@ class BattleManager:
         self.selected_mode = mode_name
         self.is_endless = False  # 預設為非無限模式
         play_bgm(self.volume, is_endless=False)
+
+        # 在開始遊戲前保存當前的購買次數（保留原石不變）
+        save_meta_data(primogem=self.primogem, difficulty_tier=self.difficulty_tier, max_difficulty_tier=self.max_difficulty_tier)
         self.deck = []
         for _ in range(3): self.deck.append(copy.deepcopy(CARD_DATABASE["STRIKE"]))
         self.deck.append(copy.deepcopy(CARD_DATABASE["HYDRO_BLADE"]))
@@ -1344,22 +1342,23 @@ class BattleManager:
         self.run_primogems_earned = primogems
         self.primogem += primogems
 
+        # 輸掉時刪除歷史存檔
+        if self.player_hp <= 0:
+            delete_savegame(self.current_save_slot)
+
         # --- 難度階層解鎖: 通關後提升 ---
         if self.current_wave > self.max_waves and self.difficulty_tier < self.max_difficulty_tier:
             self.difficulty_tier += 1
             self._log(f"難度階層提升至 {self.difficulty_tier}！")
 
         # 保存元數據
-        self._log(f"保存元數據: primogem={self.primogem}, difficulty_tier={self.difficulty_tier}, blessing_counts={self.blessing_counts}")
         save_meta_data(
             primogem=self.primogem,
             difficulty_tier=self.difficulty_tier,
             max_difficulty_tier=self.max_difficulty_tier,
-            blessing_counts=self.blessing_counts
         )
 
         self.state = "SETTLEMENT"
-        self._log(f"結算: {primogems} 原石 (波{waves}×2 + 殺{kills}×5 + 反{reactions}×3)")
 
     def start_next_wave(self):
         w = self.current_wave

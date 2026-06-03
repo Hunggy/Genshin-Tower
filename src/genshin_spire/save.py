@@ -1,6 +1,5 @@
 import json
 import os
-
 from .config import get_save_path, get_meta_save_path
 
 
@@ -16,7 +15,7 @@ _MAX_SLOTS = 3
 
 
 def list_save_slots():
-    """返回每個槽位的狀態列表 {slot: {has_save, mode, wave, time} or None}"""
+    """列出每個存檔槽位的狀態 {slot: {has_save, mode, wave, is_endless} or None}"""
     result = {}
     for slot in range(1, _MAX_SLOTS + 1):
         path = get_save_path(slot)
@@ -24,22 +23,22 @@ def list_save_slots():
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                battle = data.get("battle", {})
+                battle = data.get("battle", data)
                 result[slot] = {
                     "has_save": True,
-                    "mode": battle.get("selected_mode", "NORMAL"),
-                    "wave": battle.get("current_wave", 1),
-                    "is_endless": battle.get("is_endless", False),
+                    "mode": battle.get("selected_mode", data.get("selected_mode", "NORMAL")),
+                    "wave": battle.get("current_wave", data.get("current_wave", 1)),
+                    "is_endless": battle.get("is_endless", data.get("is_endless", False)),
                 }
             except Exception:
-                result[slot] = {"has_save": False}
+                result[slot] = {"has_save": True, "mode": "NORMAL", "wave": 1, "is_endless": False}
         else:
             result[slot] = {"has_save": False}
     return result
 
 
 def has_savegame(slot=None):
-    """檢查是否存在存檔。若未指定 slot，檢查任意槽位。"""
+    """檢查是否有存檔（未指定 slot 時檢查所有槽位）"""
     if slot is not None:
         return os.path.exists(get_save_path(slot))
     for s in range(1, _MAX_SLOTS + 1):
@@ -49,14 +48,15 @@ def has_savegame(slot=None):
 
 
 def get_savegame_mode(slot=1):
-    """讀取存檔中的模式名稱，若無存檔或讀取失敗則返回 None"""
+    """讀取存檔中的模式"""
     try:
         path = get_save_path(slot)
         if not os.path.exists(path):
             return None
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-        return data.get("battle", {}).get("selected_mode", None)
+        battle = data.get("battle", data)
+        return battle.get("selected_mode", None)
     except Exception:
         return None
 
@@ -66,23 +66,30 @@ def save_game(game, slot=None):
     if slot is None:
         slot = getattr(game, "current_save_slot", 1)
     try:
-        # 允許在戰鬥相關狀態存檔（包含從戰鬥進入的設置界面）
-        valid_battle = ("BATTLE", "ENEMY_TURN")
+        valid_battle = ("BATTLE", "ENEMY_TURN", "DISCOVERY", "SELECT_CARD", "REWARD")
         in_settings = game.state == "SETTINGS" and game.previous_battle_state in valid_battle
         if game.state not in valid_battle and not in_settings:
-            print("只能在戰鬥中存檔")
+            print("只可在進行中的對局存檔")
             return False
+
         data = game.save_to_dict()
-        # 若從設置界面存檔，修正記錄的狀態為實際戰鬥狀態
+
         if data.get("state") == "SETTINGS" and game.previous_battle_state in valid_battle:
             data["state"] = game.previous_battle_state
+
         data["save_slot"] = slot
-        with open(get_save_path(slot), "w", encoding="utf-8") as f:
+
+        filepath = get_save_path(slot)
+        os.makedirs(os.path.dirname(filepath) if os.path.dirname(filepath) else '.', exist_ok=True)
+
+        with open(filepath, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         print(f"存檔成功 (槽位 {slot})")
         return True
     except Exception as e:
         print(f"存檔失敗: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
@@ -101,14 +108,22 @@ def load_game(game, slot=None):
             game.current_save_slot = data.get("save_slot", slot)
             from .audio import play_bgm
             play_bgm(game.volume, is_endless=game.is_endless)
+            # 從元數據重新加載跨局數據（戰鬥存檔中可能是舊值）
+            meta = load_meta_data()
+            game.primogem = meta.get("primogem", 0)
+            game.difficulty_tier = meta.get("difficulty_tier", 0)
+            game.max_difficulty_tier = meta.get("max_difficulty_tier", 5)
+            game.blessing_counts = meta.get("blessing_counts", {})
         return ok
     except Exception as e:
         print(f"讀檔失敗: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 
 def delete_savegame(slot=None):
-    """删除存档文件。若未指定 slot，删除当前游戏的存档槽位。"""
+    """刪除存檔文件"""
     if slot is None:
         slot = 1
     path = get_save_path(slot)
@@ -116,75 +131,97 @@ def delete_savegame(slot=None):
         os.remove(path)
 
 
-def save_meta_data(primogem=0, difficulty_tier=0, max_difficulty_tier=5, blessing_counts={}):
-    """保存元数据到 meta_save.json，format: {"primogem": int, "difficulty_tier": int, "max_difficulty_tier": int, "blessing_counts": {str: int}}"""
+def save_meta_data(primogem=0, difficulty_tier=0, max_difficulty_tier=5, blessing_counts=None, amount=0):
+    """
+    保存元數據到 meta_save.json
+    amount > 0 時原石從當前值累加，否則直接覆蓋 primogem
+    """
     meta_path = get_meta_save_path()
-    meta_data = {
-        "primogem": primogem,
-        "difficulty_tier": difficulty_tier,
-        "max_difficulty_tier": max_difficulty_tier,
-        "blessing_counts": blessing_counts
-    }
+
     try:
+        with open(meta_path, "r", encoding="utf-8") as f:
+            existing_meta = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        existing_meta = {
+            "primogem": 0,
+            "difficulty_tier": 0,
+            "max_difficulty_tier": 5,
+            "blessing_counts": {}
+        }
+
+    if amount > 0:
+        final_primogem = existing_meta.get("primogem", 0) + amount
+    else:
+        final_primogem = primogem
+
+    # 合併 blessing_counts（保留已購買的次數，只更新有變化的）
+    if blessing_counts is not None:
+        existing_blessings = existing_meta.get("blessing_counts", {})
+        merged_blessings = existing_blessings.copy()
+        for b_id, count in blessing_counts.items():
+            if count > 0:
+                merged_blessings[b_id] = count
+            elif b_id not in merged_blessings:
+                merged_blessings[b_id] = 0
+        final_blessings = merged_blessings
+    else:
+        final_blessings = existing_meta.get("blessing_counts", {})
+
+    meta_data = {
+        "primogem": final_primogem,
+        "difficulty_tier": difficulty_tier if difficulty_tier else existing_meta.get("difficulty_tier", 0),
+        "max_difficulty_tier": max_difficulty_tier,
+        "blessing_counts": final_blessings
+    }
+
+    try:
+        meta_path_dir = os.path.dirname(meta_path)
+        if meta_path_dir and not os.path.exists(meta_path_dir):
+            os.makedirs(meta_path_dir)
+
         with open(meta_path, "w", encoding="utf-8") as f:
             json.dump(meta_data, f, ensure_ascii=False, indent=2)
-        print(f"元數據已保存: primogem={primogem}, difficulty_tier={difficulty_tier}")
+
         return True
     except Exception as e:
-        print(f"保存元數據失敗: {e}")
+        print(f"[ERROR] 保存元數據失敗: {e}")
         return False
 
 
 def load_meta_data():
-    """读取元数据，returns dict，如果文件不存在返回默认值"""
+    """從文件加載元數據"""
     meta_path = get_meta_save_path()
-    default_data = {
-        "primogem": 0,
-        "difficulty_tier": 0,
-        "max_difficulty_tier": 5,
-        "blessing_counts": {}
-    }
-    if not os.path.exists(meta_path):
-        return default_data
     try:
-        with open(meta_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-        return {
-            "primogem": data.get("primogem", 0),
-            "difficulty_tier": data.get("difficulty_tier", 0),
-            "max_difficulty_tier": data.get("max_difficulty_tier", 5),
-            "blessing_counts": data.get("blessing_counts", {})
-        }
+        if os.path.exists(meta_path):
+            with open(meta_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                return data
+        else:
+            return {
+                "primogem": 0,
+                "difficulty_tier": 0,
+                "max_difficulty_tier": 5,
+                "blessing_counts": {}
+            }
     except Exception as e:
-        print(f"讀取元數據失敗: {e}")
-        return default_data
-    try:
-        with open(meta_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        print(f"[ERROR] 加載元數據失敗: {e}")
         return {
-            "primogem": data.get("primogem", 0),
-            "difficulty_tier": data.get("difficulty_tier", 0),
-            "max_difficulty_tier": data.get("max_difficulty_tier", 5),
-            "blessing_counts": data.get("blessing_counts", {})
+            "primogem": 0,
+            "difficulty_tier": 0,
+            "max_difficulty_tier": 5,
+            "blessing_counts": {}
         }
-    except json.JSONDecodeError:
-        print("元數據文件損壞，返回默認值")
-        return default_data
-    except Exception as e:
-        print(f"讀取元數據失敗: {e}")
-        return default_data
 
 
-# --- 特殊機制圖鑑 ---
 MECHANICS_GUIDE_ENTRIES = [
-    ("1. 標記追擊", "每回合開始隨機標記一張手牌（TARGET 紅標）。本回合打出該牌時，額外造成 15 點真實傷害（無視護盾）。"),
-    ("2. 反應超載", "單回合內觸發 3 次及以上元素反應（蒸發、凍結、感電、結晶、擴散、碎冰、草原核等）。結束回合後，敵人下回合強制暈眩。"),
-    ("3. 能量浪費", "結束回合時若仍有剩餘能量，敵人吸收能量：每剩 1 點，敵人意圖傷害永久 +2。"),
-    ("4. 節奏大師", "僅部分精英/BOSS 擁有（波次 10/15/20/25/30）。每 2 回合切換：進攻姿態意圖 +50%；防禦姿態每回合回復 10 HP。切換前 1 回合有金色預告。"),
-    ("5. 大招打斷", "BOSS 蓄力期間，若本回合使敵人凍結、石化或暈眩，蓄力進度重置為 1。"),
-    ("6. 元素震懾", "用克制元素攻擊元素盾時，一次削 3 層盾，且敵人下次攻擊意圖傷害降低 15%。"),
-    ("7. 連擊壓制", "單回合打出 ≥5 張牌，敵人該次攻擊傷害降低 30%。"),
-    ("8. 元素護盾", "部分敵人帶元素盾層數；克制元素破盾更快，破盾後敵人暈眩 1 回合。"),
-    ("9. 大招蓄力", "BOSS 蓄力滿後釋放高倍率攻擊；留意頭頂蓄力計數並用控制打斷。"),
-    ("10. 元素反應系統", "本遊戲包含以下元素反應：\n\n【潮濕】水元素附著，使敵人進入潮濕狀態。可觸發多種元素反應。水刃、雨神之护、潮汐波可使敵人潮濕。\n\n【蒸發】火+潮濕。傷害翻倍。若裝備「熾烈的炎之魔女」，蒸發不消耗潮濕。不灭之火、黎明·斩击、天基烈焰可觸發。\n\n【感電】雷+潮濕。敵人獲得 2 層易傷（受到傷害+50%），不消耗潮濕。天街巡游、雷霆连击可觸發。\n\n【凍結】冰+水。敵人跳過下回合攻擊。冰霜新星可使敵人凍結。\n\n【碎冰】冰攻擊凍結的敵人。傷害變為 3 倍。碎冰重击可觸發。\n\n【結晶】岩+潮濕。玩家獲得護甲盾。千岩固牢、荒星防护可觸發。\n\n【擴散】風+潮濕。敵人當前意圖傷害降低 15%。旋风护盾可觸發。\n\n【草原核】攻擊潮濕敵人時生成草原核。回合開始時草原核爆炸，造成 8×數量 傷害（基礎）。裝備「深林的記憶」草原核傷害+10；裝備「草原的催化者」攻擊潮濕敵人時生成草原核；裝備「净善摄位」攻擊潮濕敵人時本回合生成草原核且草原核傷害+50%。"),
+    ("1. 目標標記", "每回合開始會隨機選一個敵人作為標記 TARGET，該敵人受到的傷害增加 15%"),
+    ("2. 呼應聯動", "場上有元素附着時，使用相應元素技能會觸發元素反應"),
+    ("3. 共鳴共生", "場上有另一個共鳴敵人時，雷鳴音爆傷害減半"),
+    ("4. 元素防禦", "BOSS戰時，每2波觸發一種攻防狀態，傷害增加50%"),
+    ("5. 元素增生", "擁有元素增生的敵人每回合承受30%傷害"),
+    ("6. 洞天仙力", "每回合開始時，根據剩餘能力牌抽牌+3"),
+    ("7. 靈光一閃", "當手牌數量≤5時，元素反應處理效果最佳"),
+    ("8. 混沌行狀", "BOSS常態行徑會放大某些狀態的效果"),
+    ("9. 洞天仙", "每回合召喚3次能力牌，隨回合數增加獲益"),
+    ("10. 元素回", "每次使用元素技能時，會恢復少量體力"),
 ]

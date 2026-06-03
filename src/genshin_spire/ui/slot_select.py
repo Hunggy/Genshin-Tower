@@ -2,7 +2,7 @@ import pygame
 
 from ..config import GOLD, WHITE
 from ..resources import font_big, font_main
-from ..save import list_save_slots, MODE_DISPLAY_NAMES
+from ..save import list_save_slots, save_game, load_game, MODE_DISPLAY_NAMES, delete_savegame
 
 
 def draw_slot_select_overlay(surface, game, mx, my):
