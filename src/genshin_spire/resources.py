@@ -211,20 +211,28 @@ element_icons = load_element_icons()
 
 _ui_font_cache = {}
 
-_web_font_path = None
+_web_font_obj = None
 
 
 def _get_web_font():
-    global _web_font_path
-    if _web_font_path is not None:
-        return _web_font_path
+    global _web_font_obj
+    if _web_font_obj is not None:
+        return _web_font_obj
     base = get_base_path()
-    candidate = os.path.join(base, "fonts", "NotoSansSC-Regular.otf")
-    if os.path.exists(candidate):
-        _web_font_path = candidate
-    else:
-        _web_font_path = ""
-    return _web_font_path
+    for candidate in [
+        os.path.join(base, "fonts", "NotoSansSC-Regular.otf"),
+        os.path.join(os.path.dirname(base), "fonts", "NotoSansSC-Regular.otf"),
+        "fonts/NotoSansSC-Regular.otf",
+    ]:
+        try:
+            f = pygame.font.Font(candidate, 16)
+            _web_font_obj = f
+            _web_font_path_used = candidate
+            return _web_font_obj
+        except Exception:
+            continue
+    _web_font_obj = False
+    return _web_font_obj
 
 
 def get_ui_font(size, bold=False):
@@ -233,7 +241,10 @@ def get_ui_font(size, bold=False):
         if IS_WEB:
             fp = _get_web_font()
             if fp:
-                _ui_font_cache[key] = pygame.font.Font(fp, size)
+                try:
+                    _ui_font_cache[key] = pygame.font.Font(fp.path, size)
+                except Exception:
+                    _ui_font_cache[key] = pygame.font.SysFont(UI_FONT_FAMILIES, size, bold=bold)
             else:
                 _ui_font_cache[key] = pygame.font.SysFont(UI_FONT_FAMILIES, size, bold=bold)
         else:

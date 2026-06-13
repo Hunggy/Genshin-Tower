@@ -19,10 +19,7 @@ def get_base_path():
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         return sys._MEIPASS
     if IS_WEB:
-        parent = os.path.dirname(PROJECT_ROOT)
-        if os.path.isdir(os.path.join(parent, "images")):
-            return parent
-        return PROJECT_ROOT
+        return os.path.dirname(PROJECT_ROOT)
     return PROJECT_ROOT
 
 
