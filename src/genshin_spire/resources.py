@@ -79,18 +79,39 @@ def load_shield_image():
 shield_image = load_shield_image()
 
 
+_ENEMY_NAME_MAP = {
+    "基礎雜兵": "enemy_basic",
+    "進階雜兵(盾/遠程)": "enemy_advanced",
+    "進階怪(屬性控制)": "enemy_advanced",
+    "怪物組合(群攻考驗)": "enemy_group",
+    "高難度雜兵": "enemy_hard",
+    "終極考驗怪物": "enemy_ultimate",
+    "最終大_BOSS_3": "enemy_boss_final",
+    "階段 BOSS 1": "enemy_stage_boss_1",
+    "階段 BOSS 2": "enemy_stage_boss_2",
+    "精英怪 1": "enemy_elite_1",
+    "精英怪 2": "enemy_elite_2",
+    "精英怪 3": "enemy_elite_3",
+    "精英怪": "enemy_elite_basic",
+}
+
+
 def load_enemy_image(enemy_name):
     base = get_base_path()
     enemy_dir = os.path.join(base, "images", "enemies")
 
-    possible_names = [enemy_name, enemy_name.replace(" ", "_"), enemy_name.replace(" ", "")]
+    ascii_name = _ENEMY_NAME_MAP.get(enemy_name)
+    search_names = []
+    if ascii_name:
+        search_names.append(ascii_name)
+    search_names.extend([enemy_name, enemy_name.replace(" ", "_"), enemy_name.replace(" ", "")])
     if "(" in enemy_name:
         name_no_paren = enemy_name[:enemy_name.index("(")].strip()
-        possible_names.append(name_no_paren)
-        possible_names.append(name_no_paren.replace(" ", "_"))
+        search_names.append(name_no_paren)
+        search_names.append(name_no_paren.replace(" ", "_"))
 
     for ext in [".png", ".jpg", ".jpeg", ".bmp", ".webp"]:
-        for name in possible_names:
+        for name in search_names:
             for d in [enemy_dir, os.path.join(base, "images")]:
                 path = os.path.join(d, name + ext)
                 if os.path.exists(path):
@@ -190,11 +211,33 @@ element_icons = load_element_icons()
 
 _ui_font_cache = {}
 
+_web_font_path = None
+
+
+def _get_web_font():
+    global _web_font_path
+    if _web_font_path is not None:
+        return _web_font_path
+    base = get_base_path()
+    candidate = os.path.join(base, "fonts", "NotoSansSC-Regular.otf")
+    if os.path.exists(candidate):
+        _web_font_path = candidate
+    else:
+        _web_font_path = ""
+    return _web_font_path
+
 
 def get_ui_font(size, bold=False):
     key = (size, bold)
     if key not in _ui_font_cache:
-        _ui_font_cache[key] = pygame.font.SysFont(UI_FONT_FAMILIES, size, bold=bold)
+        if IS_WEB:
+            fp = _get_web_font()
+            if fp:
+                _ui_font_cache[key] = pygame.font.Font(fp, size)
+            else:
+                _ui_font_cache[key] = pygame.font.SysFont(UI_FONT_FAMILIES, size, bold=bold)
+        else:
+            _ui_font_cache[key] = pygame.font.SysFont(UI_FONT_FAMILIES, size, bold=bold)
     return _ui_font_cache[key]
 
 

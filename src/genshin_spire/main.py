@@ -9,8 +9,9 @@ from .config import (
     WHITE, BLACK, GOLD, GREEN, RED, BLUE, ORANGE,
     ELEMENT_COLORS, ELEMENT_COUNTERS,
     get_base_path, get_save_path,
-    IS_WEB, IS_TOUCH,
+    IS_WEB,
 )
+import genshin_spire.config as _cfg
 from .resources import (
     load_background, get_ui_font,
     particles, element_icons,
@@ -48,9 +49,20 @@ from .ui.touch_ui import TouchOverlay
 
 # --- Module-level initialization ---
 pygame.init()
-pygame.mixer.init()
+try:
+    pygame.mixer.init()
+except Exception:
+    pass
 screen = pygame.display.set_mode((SCREEN_W, SCREEN_H))
 pygame.display.set_caption("Project: Genshin Spire")
+
+if IS_WEB:
+    try:
+        import platform as _plat
+        if _plat.window.navigator.maxTouchPoints > 0:
+            _cfg.IS_TOUCH = True
+    except Exception:
+        pass
 
 
 import asyncio
@@ -294,7 +306,7 @@ async def main():
             main_surface.blit(hint, hint.get_rect(center=(w // 2, h // 2 + 60)))
 
         if getattr(game, 'show_slot_select', False):
-            slot_rects = draw_slot_select_overlay(main_surface, game, mx, my, w, h)
+            slot_rects = draw_slot_select_overlay(main_surface, game, mx, my)
         else:
             slot_rects = {}
 
@@ -317,7 +329,7 @@ async def main():
                     sys.exit()
 
             # --- 觸屏事件 ---
-            if IS_TOUCH and event.type == pygame.FINGERDOWN:
+            if _cfg.IS_TOUCH and event.type == pygame.FINGERDOWN:
                 fx, fy = event.x * w, event.y * h
                 mx, my = int(fx), int(fy)
                 touch_action = touch_overlay.get_action((mx, my))
@@ -327,10 +339,10 @@ async def main():
                     touch_finger = True
                     touch_scroll_start_y = fy
 
-            if IS_TOUCH and event.type == pygame.FINGERUP:
+            if _cfg.IS_TOUCH and event.type == pygame.FINGERUP:
                 touch_finger = False
 
-            if IS_TOUCH and event.type == pygame.FINGERMOTION:
+            if _cfg.IS_TOUCH and event.type == pygame.FINGERMOTION:
                 if touch_finger:
                     fy = event.y * h
                     dy = fy - touch_scroll_start_y
@@ -674,7 +686,16 @@ async def main():
 
 def _handle_touch_action(game, action, sound_mgr):
     """處理觸屏按鈕動作"""
-    if action == "END_TURN" and game.state == "BATTLE" and not game.show_deck and not game.show_mechanics_guide:
+    if action == "ESC":
+        if game.show_mechanics_guide:
+            game.show_mechanics_guide = False
+            game.mechanics_scroll = 0
+        elif game.state == "SHOP" and game.shop_mode == "REMOVE_CARD":
+            game.shop_mode = None
+        elif game.state in ("BATTLE", "ENEMY_TURN", "REWARD", "SHOP", "UPGRADE_CARD"):
+            game.previous_battle_state = game.state
+            game.state = "SETTINGS"
+    elif action == "END_TURN" and game.state == "BATTLE" and not game.show_deck and not game.show_mechanics_guide:
         game.end_turn()
     elif action == "DECK":
         game.show_deck = not game.show_deck

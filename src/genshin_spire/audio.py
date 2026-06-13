@@ -14,9 +14,9 @@ class SoundManager:
             "attack": ["attack.mp3", "attack.wav"],
             "shield": ["shield.mp3", "shield.wav"],
             "hurt": ["hurt.mp3", "hurt.wav"],
-            "jump": ["星之卡比掉下悬崖_爱给网_aigei_com.mp3", "jump.mp3", "jump.wav"],
-            "gta_death": ["GTA V 死亡逮捕音效(GTA V WastedBuste_爱给网_aigei_com.mp3"],
-            "mage_death": ["法师死亡_爱给网_aigei_com.mp3"],
+            "jump": ["jump_cn.mp3", "星之卡比掉下悬崖_爱给网_aigei_com.mp3", "jump.mp3", "jump.wav"],
+            "gta_death": ["gta_death.mp3", "GTA V 死亡逮捕音效(GTA V WastedBuste_爱给网_aigei_com.mp3"],
+            "mage_death": ["mage_death.mp3", "法师死亡_爱给网_aigei_com.mp3"],
         }
 
         for name, files in sound_map.items():

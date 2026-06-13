@@ -8,7 +8,10 @@ import pygame
 IS_WEB = hasattr(sys, 'platform') and sys.platform == 'emscripten'
 
 pygame.init()
-pygame.mixer.init()
+try:
+    pygame.mixer.init()
+except Exception:
+    pass
 
 SCREEN_W, SCREEN_H = 1280, 720
 if IS_WEB:
@@ -24,4 +27,9 @@ from genshin_spire.main import main  # noqa: E402
 
 if __name__ == "__main__":
     import asyncio
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except RuntimeError:
+        loop = asyncio.get_event_loop()
+        loop.create_task(main())
+        loop.run_forever()
