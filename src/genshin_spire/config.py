@@ -1,12 +1,14 @@
 import os
 import sys
 
+# --- 平台檢測 ---
+IS_WEB = hasattr(sys, 'platform') and sys.platform == 'emscripten'
+IS_TOUCH = False  # 遊戲啟動後動態設定
+
 
 # Determine project root dynamically
 def _get_project_root():
-    # 本檔案位於 src/genshin_spire/
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    # 往上兩層到專案根目錄
     return os.path.dirname(os.path.dirname(this_dir))
 
 
@@ -14,29 +16,26 @@ PROJECT_ROOT = _get_project_root()
 
 
 def get_base_path():
-    # 支援 PyInstaller 打包路徑
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         return sys._MEIPASS
     return PROJECT_ROOT
 
 
 def get_save_path(slot=1):
-    """取得存檔檔案完整路徑：開發時在專案根目錄，打包後在用戶文件目錄"""
+    if IS_WEB:
+        return os.path.join(get_base_path(), f"savegame_{slot}.json")
     if getattr(sys, 'frozen', False):
-        # PyInstaller 打包後：使用用戶文件目錄，避免臨時目錄被清理導致存檔丟失
         save_dir = os.path.join(os.path.expanduser("~"), "Documents", "GenshinSpire")
     else:
-        # 開發環境：專案根目錄
         save_dir = PROJECT_ROOT
-
     if not os.path.exists(save_dir):
         os.makedirs(save_dir)
-
     return os.path.join(save_dir, f"savegame_{slot}.json")
 
 
 def get_meta_save_path():
-    """元數據存檔路徑（原石、難度、祝福次數等跨局數據）"""
+    if IS_WEB:
+        return os.path.join(get_base_path(), "meta_save.json")
     if getattr(sys, 'frozen', False):
         save_dir = os.path.join(os.path.expanduser("~"), "Documents", "GenshinSpire")
     else:
