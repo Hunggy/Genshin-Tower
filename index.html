@@ -15,7 +15,7 @@ body { background: #1a1a2e; overflow: hidden; }
 #load-overlay h1 { font-size: 28px; margin-bottom: 30px; color: #c8a0ff; text-shadow: 0 0 10px rgba(200,160,255,0.5); }
 #pbox { width: 60%; max-width: 500px; }
 #pbar-bg { width: 100%; height: 24px; background: #333; border-radius: 12px; overflow: hidden; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); }
-#pbar { width: 0%; height: 100%; background: linear-gradient(90deg, #7c3aed, #c084fc); border-radius: 12px; transition: width 0.3s ease; }
+#pbar { width: 0%; height: 100%; background: linear-gradient(90deg, #7c3aed, #c084fc); border-radius: 12px; transition: width 0.1s linear; }
 #ptxt { margin-top: 12px; font-size: 14px; color: #999; text-align: center; }
 </style>
 </head>
@@ -25,47 +25,39 @@ body { background: #1a1a2e; overflow: hidden; }
     <h1>Genshin Spire</h1>
     <div id="pbox">
         <div id="pbar-bg"><div id="pbar"></div></div>
-        <div id="ptxt">正在準備下載...</div>
+        <div id="ptxt">正在載入遊戲...</div>
     </div>
 </div>
 
 <script>
-// Monkey-patch fetch to show download progress
-var _origFetch = window.fetch;
-var _apkSize = 34603008;
-window.fetch = function() {
-    return _origFetch.apply(this, arguments).then(function(resp) {
-        var url = arguments[0];
-        if (typeof url === 'string' && url.indexOf('.apk') >= 0) {
-            var clone = resp.clone();
-            var reader = clone.body.getReader();
-            var received = 0;
-            var bar = document.getElementById('pbar');
-            var txt = document.getElementById('ptxt');
+var bar = document.getElementById('pbar');
+var txt = document.getElementById('ptxt');
+var ov = document.getElementById('load-overlay');
+var startTime = Date.now();
+var totalMs = 60000;
 
-            function pump() {
-                return reader.read().then(function(result) {
-                    if (result.done) return;
-                    received += result.value.length;
-                    var pct = Math.round((received / _apkSize) * 100);
-                    var mb = (received / 1048576).toFixed(1);
-                    var total = (_apkSize / 1048576).toFixed(1);
-                    bar.style.width = pct + '%';
-                    txt.textContent = mb + ' / ' + total + ' MB (' + pct + '%)';
-                    return pump();
-                });
-            }
-            pump();
+var progressTimer = setInterval(function() {
+    var elapsed = Date.now() - startTime;
+    var pct = Math.round((elapsed / totalMs) * 100);
+    if (pct > 95) pct = 95;
+    bar.style.width = pct + '%';
+    var sec = Math.round(elapsed / 1000);
+    txt.textContent = '正在載入遊戲... (' + sec + '秒)';
+}, 200);
 
-            // Hide overlay after small delay when game starts
-            setTimeout(function() {
-                var ov = document.getElementById('load-overlay');
-                if (ov) { ov.style.transition = 'opacity 0.5s'; ov.style.opacity = '0'; setTimeout(function() { ov.style.display = 'none'; }, 500); }
-            }, 5000);
-        }
-        return resp;
-    });
-};
+var hideTimer = setInterval(function() {
+    if (document.querySelector('canvas')) {
+        clearInterval(progressTimer);
+        clearInterval(hideTimer);
+        bar.style.width = '100%';
+        txt.textContent = '載入完成！';
+        setTimeout(function() {
+            ov.style.transition = 'opacity 0.5s';
+            ov.style.opacity = '0';
+            setTimeout(function() { ov.style.display = 'none'; }, 500);
+        }, 300);
+    }
+}, 300);
 </script>
 
 <script src="https://pygame-web.github.io/cdn/0.9.3/pythons.js"
