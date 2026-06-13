@@ -1,54 +1,205 @@
-<!DOCTYPE html>
-<html lang="en-us">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Genshin Spire</title>
-<style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #1a1a2e; overflow: hidden; }
-#load-overlay {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    display: flex; flex-direction: column; justify-content: center; align-items: center;
-    background: #1a1a2e; color: #fff; z-index: 9999; font-family: 'Segoe UI', Arial, sans-serif;
+<html lang="en-us"><script src="https://pygame-web.github.io/cdn/0.9.3/pythons.js" type=module id="site" data-python="python3.12" data-LINES=42 data-COLUMNS=132 data-os="vtx,snd,gui" async defer>#<!--
+
+print("""
+Loading genshin-tower-main from genshin-tower-main.apk
+    Pygbag Version : 0.9.3
+    Template Version : 0.9.3
+    Python  : 3.12
+    CDN URL : https://pygame-web.github.io/cdn/0.9.3/
+    Screen  : 1280x720
+    Title   : genshin-tower-main
+    Folder  : genshin-tower-main
+    Authors : pgw
+    SPDX-License-Identifier: cookiecutter.spdx
+
+""")
+
+import sys
+import asyncio
+import platform
+import json
+from pathlib import Path
+
+# do not rename
+async def custom_site():
+    import embed
+    platform.document.body.style.background = "#1a1a2e"
+
+    platform.window.transfer.hidden = true
+    platform.window.canvas.style.visibility = "visible"
+
+    bundle = "genshin-tower-main"
+
+    appdir = Path(f"/data/data/{bundle}")
+    appdir.mkdir()
+
+    if platform.window.location.host.find('.itch.zone')>0:
+        import zipfile
+        async with platform.fopen("genshin-tower-main.apk", "rb") as archive:
+            with zipfile.ZipFile(archive) as zip_ref:
+                zip_ref.extractall(appdir.as_posix())
+    else:
+        import tarfile
+        async with platform.fopen("genshin-tower-main.tar.gz", "rb") as archive:
+            tar = tarfile.open(fileobj=archive, mode="r:gz")
+            tar.extractall(path=appdir.as_posix(), filter='tar')
+            tar.close()
+
+    platform.run_main(PyConfig, loaderhome= appdir / "assets", loadermain=None)
+
+    while embed.counter()<0:
+        await asyncio.sleep(.1)
+
+    main = appdir / "assets" / "main.py"
+
+    if not platform.window.MM.UME:
+        __import__(__name__).__file__ = main
+        msg  = "Ready to start ! Please click/touch page"
+        platform.window.infobox.innerText = msg
+        print("\n"*4, f"    * Waiting for media user engagement. {msg} *" , "\n"*4)
+        while not platform.window.MM.UME:
+            await asyncio.sleep(.1)
+
+    await TopLevel_async_handler.start_toplevel(platform.shell, console=window.python.config.debug)
+
+    __import__(__name__).__file__ = main
+
+    def ui_callback(pkg):
+        platform.window.infobox.innerText = f"installing {pkg}"
+
+    await shell.source(main, callback=ui_callback)
+
+    platform.window.infobox.style.display = "none"
+    platform.window.config.gui_divider = 1
+    platform.window.window_resize()
+    print("default.tmpl: done")
+
+    shell.interactive()
+
+asyncio.run( custom_site() )
+
+# --></script><head><!--
+    <title>Genshin Spire</title>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes"/>
+    <link rel="icon" type="image/png" href="favicon.png" sizes="16x16">
+
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: none; background-color: #1a1a2e; }
+        canvas.emscripten {
+            border: 0px none; background-color: transparent;
+            width: 100%; height: 100%; z-index: 5;
+            padding: 0; margin: 0 auto;
+            position: absolute; top: 0; bottom: 0; left: 0; right: 0;
+        }
+        #load-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            display: flex; flex-direction: column; justify-content: center; align-items: center;
+            background: #1a1a2e; color: #fff; z-index: 9999;
+        }
+        #load-overlay h1 { font-size: 28px; margin-bottom: 30px; color: #c8a0ff; text-shadow: 0 0 10px rgba(200,160,255,0.5); }
+        #pbox { width: 60%; max-width: 500px; }
+        #pbar-bg { width: 100%; height: 24px; background: #333; border-radius: 12px; overflow: hidden; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); }
+        #pbar { width: 0%; height: 100%; background: linear-gradient(90deg, #7c3aed, #c084fc); border-radius: 12px; transition: width 0.3s ease; }
+        #ptxt { margin-top: 12px; font-size: 14px; color: #999; text-align: center; }
+        #infobox { position: fixed; background: green; color: blue; font-weight: bold; padding: 12px 24px; z-index: 999999; }
+    </style>
+
+    <script type="application/javascript">
+config = {
+    xtermjs : "1" ,
+    _sdl2 : "canvas",
+    user_canvas : 0,
+    user_canvas_managed : 0,
+    gui_divider : 2,
+    ume_block : 1,
+    can_close : 0,
+    archive : "genshin-tower-main",
+    gui_debug : 2,
+    cdn : "https://pygame-web.github.io/cdn/0.9.3/",
+    autorun : 0,
+    PYBUILD : "3.12",
+    fb_ar   :  1.77,
+    fb_width : "1280",
+    fb_height : "720"
 }
-#load-overlay h1 { font-size: 28px; margin-bottom: 30px; color: #c8a0ff; text-shadow: 0 0 10px rgba(200,160,255,0.5); }
-#pbox { width: 60%; max-width: 500px; }
-#pbar-bg { width: 100%; height: 24px; background: #333; border-radius: 12px; overflow: hidden; box-shadow: inset 0 2px 4px rgba(0,0,0,0.5); }
-#pbar { width: 0%; height: 100%; background: linear-gradient(90deg, #7c3aed, #c084fc); border-radius: 12px; transition: width 0.1s linear; }
-#ptxt { margin-top: 12px; font-size: 14px; color: #999; text-align: center; }
-</style>
+
+function show_infobox() {
+    infobox.style.display = "block";
+    const w = infobox.offsetWidth;
+    const h = infobox.offsetHeight;
+    const left = (window.innerWidth - w) / 2;
+    const top = (window.innerHeight - h) / 2;
+    infobox.style.left = left + "px";
+    infobox.style.top = top + "px";
+}
+    </script>
+
+    <script src="https://pygame-web.github.io/cdn/0.9.3//browserfs.min.js"></script>
+
 </head>
+
 <body>
 
-<div id="load-overlay">
-    <h1>Genshin Spire</h1>
-    <div id="pbox">
-        <div id="pbar-bg"><div id="pbar"></div></div>
-        <div id="ptxt">正在載入遊戲...</div>
+    <div id="load-overlay">
+        <h1>Genshin Spire</h1>
+        <div id="pbox">
+            <div id="pbar-bg"><div id="pbar"></div></div>
+            <div id="ptxt">正在載入遊戲...</div>
+        </div>
     </div>
-</div>
 
-<script>
-var bar = document.getElementById('pbar');
-var txt = document.getElementById('ptxt');
-var ov = document.getElementById('load-overlay');
-var startTime = Date.now();
-var totalMs = 60000;
+    <div id="transfer" align=center style="display:none">
+        <div class="emscripten" id="status">Downloading...</div>
+        <div class="emscripten">
+            <progress value="0" max="100" id="progress"></progress>
+        </div>
+    </div>
 
-var progressTimer = setInterval(function() {
-    var elapsed = Date.now() - startTime;
-    var pct = Math.round((elapsed / totalMs) * 100);
-    if (pct > 95) pct = 95;
-    bar.style.width = pct + '%';
-    var sec = Math.round(elapsed / 1000);
-    txt.textContent = '正在載入遊戲... (' + sec + '秒)';
-}, 200);
+    <canvas class="emscripten" id="canvas"
+        width="1px" height="1px"
+        oncontextmenu="event.preventDefault()" tabindex=1>
+    </canvas>
 
-var hideTimer = setInterval(function() {
-    if (document.querySelector('canvas')) {
+    <canvas class="emscripten" id="canvas3d"
+        width="1280px" height="720px"
+        oncontextmenu="event.preventDefault()" tabindex=1 hidden>
+    </canvas>
+
+    <div id="infobox">Loading, please wait ...</div>
+    <div id=html></div>
+
+    <div id="dlg" hidden>
+        <input type="file" id="dlg_multifile" multiple accept="image/*">
+        <label for="dlg_multifile">Select files</label>
+    </div>
+
+    <div id="pyconsole">
+        <div id="terminal" tabIndex=1 align="left"></div>
+    </div>
+
+    <script type="application/javascript">
+    var bar = document.getElementById('pbar');
+    var txt = document.getElementById('ptxt');
+    var ov = document.getElementById('load-overlay');
+    var startTime = Date.now();
+    var totalMs = 90000;
+
+    var progressTimer = setInterval(function() {
+        var elapsed = Date.now() - startTime;
+        var pct = Math.round((elapsed / totalMs) * 100);
+        if (pct > 95) pct = 95;
+        bar.style.width = pct + '%';
+        var sec = Math.round(elapsed / 1000);
+        txt.textContent = '正在載入遊戲... (' + sec + '秒)';
+    }, 200);
+
+    function hideOverlay() {
         clearInterval(progressTimer);
-        clearInterval(hideTimer);
         bar.style.width = '100%';
         txt.textContent = '載入完成！';
         setTimeout(function() {
@@ -57,17 +208,51 @@ var hideTimer = setInterval(function() {
             setTimeout(function() { ov.style.display = 'none'; }, 500);
         }, 300);
     }
-}, 300);
-</script>
 
-<script src="https://pygame-web.github.io/cdn/0.9.3/pythons.js"
-    type="module" id="site" data-python="python3.12"
-    data-LINES=42 data-COLUMNS=132 data-os="vtx,snd,gui" async defer>#<!--
+    var hideTimer = setInterval(function() {
+        if (document.querySelector('canvas')) {
+            var canvas = document.querySelector('canvas');
+            if (canvas.width > 10) {
+                clearInterval(hideTimer);
+                hideOverlay();
+            }
+        }
+    }, 500);
 
-print("""
-Loading genshin-tower-main from genshin-tower-main.apk
-    Pygbag Version : 0.9.3
-""")
-#--></script>
+    setTimeout(function() {
+        clearInterval(hideTimer);
+        hideOverlay();
+    }, 120000);
+
+    async function custom_onload(debug_hidden) {
+        console.log(__FILE__, "custom_onload")
+        pyconsole.hidden = true
+        system.hidden = true
+        transfer.hidden = true
+        info.hidden = true
+        box.hidden = true
+        show_infobox()
+    }
+
+    function custom_prerun(){
+        console.log(__FILE__, "custom_prerun")
+    }
+
+    function custom_postrun(){
+        console.log(__FILE__, "custom_postrun")
+    }
+
+    function debug() {
+        python.config.debug = true
+        custom_onload(false)
+        Module.PyRun_SimpleString("shell.uptime()")
+        window_resize()
+    }
+
+    function info_inline(data){
+        document.getElementById("info").innerHTML = data
+    }
+    </script>
+
 </body>
 </html>
