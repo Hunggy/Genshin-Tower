@@ -281,9 +281,7 @@ async def main():
             else:
                 jw, jh = kirby_image.get_size() if kirby_image else (60, 60)
                 jx = w // 2 - jw // 2
-                base_y = h * 0.6
-                jump_h = h * 0.4
-                jy = base_y - jump_h * game.jump_progress
+                jy = h * 0.3 + h * 0.5 * game.jump_progress
                 if kirby_image:
                     main_surface.blit(kirby_image, (jx, int(jy)))
 
@@ -310,6 +308,7 @@ async def main():
         else:
             slot_rects = {}
 
+        anim_mgr.draw(main_surface)
         touch_overlay.draw(main_surface)
 
         if use_shake:
