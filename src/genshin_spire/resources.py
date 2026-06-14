@@ -50,17 +50,22 @@ def load_energy_image():
         os.path.join(os.path.dirname(base), "images", "Energry"),
     ]
     for d in energy_dirs:
-        if not os.path.exists(d):
+        try:
+            files = os.listdir(d)
+        except Exception:
             continue
-        for f in os.listdir(d):
+        for f in files:
             if f.lower().endswith((".png", ".jpg", ".jpeg")):
                 path = os.path.join(d, f)
-                if path.lower().endswith(".png"):
-                    return pygame.transform.scale(pygame.image.load(path).convert_alpha(), (80, 80))
-                img = pygame.image.load(path).convert()
-                colorkey = img.get_at((0, 0))
-                img.set_colorkey(colorkey)
-                return pygame.transform.scale(img.convert_alpha(), (80, 80))
+                try:
+                    if path.lower().endswith(".png"):
+                        return pygame.transform.scale(pygame.image.load(path).convert_alpha(), (80, 80))
+                    img = pygame.image.load(path).convert()
+                    colorkey = img.get_at((0, 0))
+                    img.set_colorkey(colorkey)
+                    return pygame.transform.scale(img.convert_alpha(), (80, 80))
+                except Exception:
+                    continue
     return None
 
 
@@ -114,25 +119,11 @@ def load_enemy_image(enemy_name):
         for name in search_names:
             for d in [enemy_dir, os.path.join(base, "images")]:
                 path = os.path.join(d, name + ext)
-                if os.path.exists(path):
-                    try:
-                        return scale_enemy(pygame.image.load(path).convert_alpha())
-                    except:
-                        pass
+                try:
+                    return scale_enemy(pygame.image.load(path).convert_alpha())
+                except:
+                    pass
 
-    if os.path.exists(enemy_dir):
-        try:
-            files = os.listdir(enemy_dir)
-            search_key = "".join(filter(str.isalnum, enemy_name)).lower()
-            for f in files:
-                file_key = "".join(filter(str.isalnum, os.path.splitext(f)[0])).lower()
-                if search_key in file_key or file_key in search_key:
-                    try:
-                        return scale_enemy(pygame.image.load(os.path.join(enemy_dir, f)).convert_alpha())
-                    except:
-                        continue
-        except:
-            pass
     return None
 
 
@@ -149,20 +140,21 @@ def load_all_characters():
     search_dirs = [
         os.path.join(base, "images"),
         os.path.join(os.path.dirname(base), "images"),
-        os.path.join(base, "model"),
-        os.path.join(base, "Genshin Tower", "model"),
     ]
 
     for d in search_dirs:
-        if not os.path.exists(d):
+        try:
+            items = os.listdir(d)
+        except Exception:
             continue
-        for item in os.listdir(d):
+        for item in items:
             if item.lower() in ["energy", "engry", "energry", "enemies"]:
                 continue
             full_path = os.path.join(d, item)
-            if os.path.isdir(full_path):
+            try:
+                sub_items = os.listdir(full_path)
                 frames = []
-                img_files = sorted([f for f in os.listdir(full_path) if f.lower().endswith((".png", ".jpg", ".jpeg"))])
+                img_files = sorted([f for f in sub_items if f.lower().endswith((".png", ".jpg", ".jpeg"))])
                 for f in img_files:
                     try:
                         img = pygame.image.load(os.path.join(full_path, f)).convert_alpha()
@@ -171,15 +163,16 @@ def load_all_characters():
                         continue
                 if frames:
                     chars[item] = frames
-            elif item.lower().endswith((".png", ".jpg", ".jpeg")):
-                name = os.path.splitext(item)[0]
-                if "background" in name.lower():
-                    continue
-                try:
-                    img = pygame.image.load(full_path).convert_alpha()
-                    chars[name] = [pygame.transform.scale(img, (120, 120))]
-                except:
-                    continue
+            except NotADirectoryError:
+                if item.lower().endswith((".png", ".jpg", ".jpeg")):
+                    name = os.path.splitext(item)[0]
+                    if "background" in name.lower():
+                        continue
+                    try:
+                        img = pygame.image.load(full_path).convert_alpha()
+                        chars[name] = [pygame.transform.scale(img, (120, 120))]
+                    except:
+                        continue
 
     if not chars:
         surf = pygame.Surface((120, 120), pygame.SRCALPHA)
@@ -195,15 +188,18 @@ def load_element_icons():
     icons = {}
     base = get_base_path()
     elements_dir = os.path.join(base, "images", "elements")
-    if os.path.exists(elements_dir):
-        for f in os.listdir(elements_dir):
-            if f.lower().endswith((".png", ".jpg", ".jpeg")):
-                name = os.path.splitext(f)[0].capitalize()
-                try:
-                    img = pygame.image.load(os.path.join(elements_dir, f)).convert_alpha()
-                    icons[name] = pygame.transform.smoothscale(img, (26, 26))
-                except:
-                    continue
+    try:
+        files = os.listdir(elements_dir)
+    except Exception:
+        return icons
+    for f in files:
+        if f.lower().endswith((".png", ".jpg", ".jpeg")):
+            name = os.path.splitext(f)[0].capitalize()
+            try:
+                img = pygame.image.load(os.path.join(elements_dir, f)).convert_alpha()
+                icons[name] = pygame.transform.smoothscale(img, (26, 26))
+            except:
+                continue
     return icons
 
 
@@ -211,37 +207,47 @@ element_icons = load_element_icons()
 
 _ui_font_cache = {}
 
-_web_font_obj = None
+_web_font_path = None
 
 
-def _get_web_font():
-    global _web_font_obj
-    if _web_font_obj is not None:
-        return _web_font_obj
+def _get_web_font_path():
+    global _web_font_path
+    if _web_font_path is not None:
+        return _web_font_path
     base = get_base_path()
-    for candidate in [
+    candidates = [
         os.path.join(base, "fonts", "NotoSansSC-Regular.otf"),
         os.path.join(base, "images", "NotoSansSC-Regular.otf"),
         os.path.join(base, "NotoSansSC-Regular.otf"),
-    ]:
+    ]
+    if IS_WEB:
+        candidates.extend([
+            "/data/data/genshin-tower-main/assets/fonts/NotoSansSC-Regular.otf",
+            "/data/data/genshin-tower-main/assets/images/NotoSansSC-Regular.otf",
+            os.path.join(os.getcwd(), "fonts", "NotoSansSC-Regular.otf"),
+            os.path.join(os.getcwd(), "images", "NotoSansSC-Regular.otf"),
+            "fonts/NotoSansSC-Regular.otf",
+            "images/NotoSansSC-Regular.otf",
+        ])
+    for candidate in candidates:
         try:
-            f = pygame.font.Font(candidate, 16)
-            _web_font_obj = f
-            return _web_font_obj
+            pygame.font.Font(candidate, 16)
+            _web_font_path = candidate
+            return _web_font_path
         except Exception:
             continue
-    _web_font_obj = False
-    return _web_font_obj
+    _web_font_path = ""
+    return _web_font_path
 
 
 def get_ui_font(size, bold=False):
     key = (size, bold)
     if key not in _ui_font_cache:
         if IS_WEB:
-            fp = _get_web_font()
+            fp = _get_web_font_path()
             if fp:
                 try:
-                    _ui_font_cache[key] = pygame.font.Font(fp.path, size)
+                    _ui_font_cache[key] = pygame.font.Font(fp, size)
                 except Exception:
                     _ui_font_cache[key] = pygame.font.SysFont(UI_FONT_FAMILIES, size, bold=bold)
             else:
