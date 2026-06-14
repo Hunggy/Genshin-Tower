@@ -420,4 +420,15 @@ def draw_ui_surface(surface, game, mx, my):
     guide_ts = font_main.render("機制圖鑑", True, WHITE)
     surface.blit(guide_ts, guide_ts.get_rect(center=guide_btn_rect.center))
 
-    return hovered_card, btn_rect, deck_btn_rect, guide_btn_rect
+    settings_btn_w, settings_btn_h = 80 * ui_scale, 36 * ui_scale
+    settings_btn_rect = pygame.Rect(guide_btn_rect.left - settings_btn_w - 10 * ui_scale, 10 * ui_scale, settings_btn_w, settings_btn_h)
+    
+    is_settings_hover = settings_btn_rect.collidepoint((mx, my))
+    settings_btn_color = (80, 60, 60) if is_settings_hover else (60, 45, 45)
+    pygame.draw.rect(surface, settings_btn_color, settings_btn_rect, border_radius=int(8 * ui_scale))
+    pygame.draw.rect(surface, GOLD if is_settings_hover else (140, 140, 160), settings_btn_rect, width=2, border_radius=int(8 * ui_scale))
+    
+    settings_ts = font_main.render("設置", True, WHITE)
+    surface.blit(settings_ts, settings_ts.get_rect(center=settings_btn_rect.center))
+
+    return hovered_card, btn_rect, deck_btn_rect, guide_btn_rect, settings_btn_rect

@@ -44,7 +44,6 @@ from .ui import (
     draw_slot_select_overlay,
 )
 from .ui.shop import draw_shop_surface
-from .ui.touch_ui import TouchOverlay
 
 
 # --- Module-level initialization ---
@@ -79,8 +78,7 @@ async def main():
 
     clock = pygame.time.Clock()
 
-    touch_overlay = TouchOverlay(SCREEN_W, SCREEN_H)
-    touch_finger = None  # 追蹤觸屏拖拽
+    touch_finger = False
     touch_scroll_start_y = 0
 
     menu_rects = {}
@@ -103,6 +101,7 @@ async def main():
         close_rect = pygame.Rect(0,0,0,0)
         mechanics_btn_rect = pygame.Rect(0, 0, 0, 0)
         guide_close_rect = pygame.Rect(0, 0, 0, 0)
+        settings_btn_rect = pygame.Rect(0, 0, 0, 0)
         menu_rects = {}
         setting_rects = {}
         mode_rects = {}
@@ -126,9 +125,6 @@ async def main():
         mouse_pressed = pygame.mouse.get_pressed()[0]
         w, h = screen.get_size()
         ui_scale = h / 720.0
-
-        touch_overlay.update_layout(w, h)
-        touch_overlay.set_state(game.state)
 
         if game.show_deck and game.is_dragging_deck_scroll:
             bar_y = h * 0.25
@@ -208,7 +204,7 @@ async def main():
             elif game.show_mechanics_guide:
                 guide_close_rect = draw_mechanics_guide_overlay(main_surface, game, mx, my)
             else:
-                hovered, btn_rect, deck_btn_rect, guide_btn_rect = draw_ui_surface(main_surface, game, mx, my)
+                hovered, btn_rect, deck_btn_rect, guide_btn_rect, settings_btn_rect = draw_ui_surface(main_surface, game, mx, my)
 
         elif game.state == "REWARD":
             hovered_reward, confirm_rect, guide_btn_rect, deck_btn_rect = draw_reward_screen_surface(main_surface, game, mx, my)
@@ -256,7 +252,7 @@ async def main():
             main_surface.blit(ok_ts, (ok_rect.x + ok_rect.width // 2 - ok_ts.get_width() // 2, ok_rect.y + 10))
 
         elif game.state == "SELECT_CARD":
-            hovered, _, _, _ = draw_ui_surface(main_surface, game, mx, my)
+            hovered, _, _, _, _ = draw_ui_surface(main_surface, game, mx, my)
             overlay = pygame.Surface((w, h), pygame.SRCALPHA)
             overlay.fill((0, 0, 0, 100))
             main_surface.blit(overlay, (0, 0))
@@ -309,7 +305,6 @@ async def main():
             slot_rects = {}
 
         anim_mgr.draw(main_surface)
-        touch_overlay.draw(main_surface)
 
         if use_shake:
             screen.fill((30, 30, 40))
@@ -331,12 +326,8 @@ async def main():
             if _cfg.IS_TOUCH and event.type == pygame.FINGERDOWN:
                 fx, fy = event.x * w, event.y * h
                 mx, my = int(fx), int(fy)
-                touch_action = touch_overlay.get_action((mx, my))
-                if touch_action:
-                    _handle_touch_action(game, touch_action, sound_mgr)
-                else:
-                    touch_finger = True
-                    touch_scroll_start_y = fy
+                touch_finger = True
+                touch_scroll_start_y = fy
 
             if _cfg.IS_TOUCH and event.type == pygame.FINGERUP:
                 touch_finger = False
@@ -535,7 +526,7 @@ async def main():
                                 game.show_mechanics_guide = False
                                 game.mechanics_scroll = 0
                         else:
-                            _, temp_btn_rect, temp_deck_btn_rect, temp_guide_btn_rect = draw_ui_surface(main_surface, game, mx, my)
+                            _, temp_btn_rect, temp_deck_btn_rect, temp_guide_btn_rect, temp_settings_btn_rect = draw_ui_surface(main_surface, game, mx, my)
 
                             if temp_deck_btn_rect.collidepoint((mx, my)):
                                 game.show_deck = True
@@ -543,11 +534,29 @@ async def main():
                             elif temp_guide_btn_rect.collidepoint((mx, my)):
                                 game.show_mechanics_guide = True
                                 game.mechanics_scroll = 0
+                            elif temp_settings_btn_rect.collidepoint((mx, my)):
+                                game.previous_battle_state = "BATTLE"
+                                game.state = "SETTINGS"
                             elif game.state == "BATTLE":
                                 if hovered:
                                     game.play_card(hovered, hovered.rect.x, hovered.rect.y)
                                 elif temp_btn_rect.collidepoint((mx, my)):
                                     game.end_turn()
+                                else:
+                                    wave_enemies = getattr(game, "wave_enemies", [])
+                                    if len(wave_enemies) > 1:
+                                        ey = int(h * 0.32)
+                                        living = [(i, e) for i, e in enumerate(wave_enemies) if e["hp"] > 0]
+                                        slot_w = 200
+                                        total_w = len(living) * slot_w
+                                        start_x = w - 480 - total_w // 2 + slot_w // 2 - 60
+                                        for idx_in_living, (i, e_data) in enumerate(living):
+                                            cx = start_x + idx_in_living * slot_w
+                                            enemy_rect = pygame.Rect(cx - 5, ey - 5, 130, 185)
+                                            if enemy_rect.collidepoint((mx, my)):
+                                                game.target_index = i
+                                                game.refresh_target_mark()
+                                                break
 
                     elif game.state == "REWARD":
                         hovered_reward, confirm_rect, guide_btn_rect, deck_btn_rect = draw_reward_screen_surface(main_surface, game, mx, my)
@@ -681,67 +690,3 @@ async def main():
                         game.anim_queue.append(("status_enemy", "已取消選擇", 250, SCREEN_H - 350))
 
         await asyncio.sleep(0)
-
-
-def _handle_touch_action(game, action, sound_mgr):
-    """處理觸屏按鈕動作"""
-    if action == "ESC":
-        if game.show_mechanics_guide:
-            game.show_mechanics_guide = False
-            game.mechanics_scroll = 0
-        elif game.state == "SHOP" and game.shop_mode == "REMOVE_CARD":
-            game.shop_mode = None
-        elif game.state in ("BATTLE", "ENEMY_TURN", "REWARD", "SHOP", "UPGRADE_CARD"):
-            game.previous_battle_state = game.state
-            game.state = "SETTINGS"
-    elif action == "END_TURN" and game.state == "BATTLE" and not game.show_deck and not game.show_mechanics_guide:
-        game.end_turn()
-    elif action == "DECK":
-        game.show_deck = not game.show_deck
-        if game.show_deck:
-            game.deck_scroll = 0
-    elif action == "GUIDE":
-        game.show_mechanics_guide = not game.show_mechanics_guide
-        if not game.show_mechanics_guide:
-            game.mechanics_scroll = 0
-    elif action == "LOG" and game.state in ("BATTLE", "ENEMY_TURN"):
-        game.show_battle_log = not game.show_battle_log
-    elif action == "TARGET_L" and game.state == "BATTLE" and not game.show_deck and not game.show_mechanics_guide:
-        game.switch_target(-1)
-    elif action == "TARGET_R" and game.state == "BATTLE" and not game.show_deck and not game.show_mechanics_guide:
-        game.switch_target(1)
-    elif action == "SCROLL_UP":
-        if game.show_deck:
-            game.deck_scroll -= 40
-        elif game.show_mechanics_guide:
-            game.mechanics_scroll -= 28
-        elif game.state == "UPGRADE_CARD":
-            game.upgrade_scroll -= 40
-    elif action == "SCROLL_DOWN":
-        if game.show_deck:
-            game.deck_scroll += 40
-        elif game.show_mechanics_guide:
-            game.mechanics_scroll += 28
-        elif game.state == "UPGRADE_CARD":
-            game.upgrade_scroll += 40
-    elif action == "BACK":
-        if game.show_mechanics_guide:
-            game.show_mechanics_guide = False
-            game.mechanics_scroll = 0
-        elif game.state == "MODE_SELECT":
-            game.state = "MAIN_MENU"
-        elif game.state == "SETTINGS":
-            if game.previous_battle_state == "BATTLE":
-                game.state = "BATTLE"
-                game.previous_battle_state = None
-            else:
-                game.state = "MAIN_MENU"
-        elif game.state == "SHOP" and game.shop_mode == "REMOVE_CARD":
-            game.shop_mode = None
-    elif action == "CANCEL" and game.state == "SELECT_CARD":
-        if game.selection_mode != "FATE_GAMBLE" and game.selection_source_card:
-            game.energy += game.selection_source_card.cost
-            game.selection_mode = None
-            game.selection_source_card = None
-            game.state = "BATTLE"
-            game.anim_queue.append(("status_enemy", "已取消選擇", 250, SCREEN_H - 350))
