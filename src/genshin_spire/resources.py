@@ -221,13 +221,12 @@ def _get_web_font():
     base = get_base_path()
     for candidate in [
         os.path.join(base, "fonts", "NotoSansSC-Regular.otf"),
-        os.path.join(os.path.dirname(base), "fonts", "NotoSansSC-Regular.otf"),
-        "fonts/NotoSansSC-Regular.otf",
+        os.path.join(base, "images", "NotoSansSC-Regular.otf"),
+        os.path.join(base, "NotoSansSC-Regular.otf"),
     ]:
         try:
             f = pygame.font.Font(candidate, 16)
             _web_font_obj = f
-            _web_font_path_used = candidate
             return _web_font_obj
         except Exception:
             continue

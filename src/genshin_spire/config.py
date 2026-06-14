@@ -19,7 +19,7 @@ def get_base_path():
     if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
         return sys._MEIPASS
     if IS_WEB:
-        return os.path.dirname(PROJECT_ROOT)
+        return os.getcwd()
     return PROJECT_ROOT
 
 
