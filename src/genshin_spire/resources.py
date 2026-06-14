@@ -117,7 +117,7 @@ def load_enemy_image(enemy_name):
 
     for ext in [".png", ".jpg", ".jpeg", ".bmp", ".webp"]:
         for name in search_names:
-            for d in [enemy_dir, os.path.join(base, "images")]:
+            for d in [os.path.join(base, "images"), enemy_dir]:
                 path = os.path.join(d, name + ext)
                 try:
                     return scale_enemy(pygame.image.load(path).convert_alpha())
