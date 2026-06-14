@@ -538,25 +538,27 @@ async def main():
                                 game.previous_battle_state = "BATTLE"
                                 game.state = "SETTINGS"
                             elif game.state == "BATTLE":
-                                if hovered:
-                                    game.play_card(hovered, hovered.rect.x, hovered.rect.y)
-                                elif temp_btn_rect.collidepoint((mx, my)):
-                                    game.end_turn()
-                                else:
-                                    wave_enemies = getattr(game, "wave_enemies", [])
-                                    if len(wave_enemies) > 1:
-                                        ey = int(h * 0.32)
-                                        living = [(i, e) for i, e in enumerate(wave_enemies) if e["hp"] > 0]
-                                        slot_w = 200
-                                        total_w = len(living) * slot_w
-                                        start_x = w - 480 - total_w // 2 + slot_w // 2 - 60
-                                        for idx_in_living, (i, e_data) in enumerate(living):
-                                            cx = start_x + idx_in_living * slot_w
-                                            enemy_rect = pygame.Rect(cx - 5, ey - 5, 130, 185)
-                                            if enemy_rect.collidepoint((mx, my)):
-                                                game.target_index = i
-                                                game.refresh_target_mark()
-                                                break
+                                wave_enemies = getattr(game, "wave_enemies", [])
+                                clicked_enemy = False
+                                if len(wave_enemies) > 1:
+                                    ey = int(h * 0.32)
+                                    living = [(i, e) for i, e in enumerate(wave_enemies) if e["hp"] > 0]
+                                    slot_w = 200
+                                    total_w = len(living) * slot_w
+                                    start_x = w - 480 - total_w // 2 + slot_w // 2 - 60
+                                    for idx_in_living, (i, e_data) in enumerate(living):
+                                        cx = start_x + idx_in_living * slot_w
+                                        enemy_rect = pygame.Rect(cx - 5, ey - 5, 130, 185)
+                                        if enemy_rect.collidepoint((mx, my)):
+                                            game.target_index = i
+                                            game.refresh_target_mark()
+                                            clicked_enemy = True
+                                            break
+                                if not clicked_enemy:
+                                    if hovered:
+                                        game.play_card(hovered, hovered.rect.x, hovered.rect.y)
+                                    elif temp_btn_rect.collidepoint((mx, my)):
+                                        game.end_turn()
 
                     elif game.state == "REWARD":
                         hovered_reward, confirm_rect, guide_btn_rect, deck_btn_rect = draw_reward_screen_surface(main_surface, game, mx, my)
